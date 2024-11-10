@@ -12,7 +12,7 @@ pub struct EventEmitter<T> {
     pub value: Arc<RwLock<T>>,
 }
 
-impl<'emitter, T> EventEmitter<T> {
+impl<T> EventEmitter<T> {
     pub fn new(value: Arc<RwLock<T>>) -> Self {
         Self {
             event_callbacks: HashMap::new(),
