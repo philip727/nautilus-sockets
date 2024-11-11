@@ -6,3 +6,11 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.93"
 byteorder = "1.5.0"
+
+[[example]]
+name = "chat_client"
+path = "examples/chat/chat_client.rs"
+
+[[example]]
+name = "chat_server"
+path = "examples/chat/chat_server.rs"
