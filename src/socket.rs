@@ -119,6 +119,7 @@ where
             &buf[Self::EVENT_LEN_OFFSET..Self::EVENT_LEN_OFFSET + Self::EVENT_LEN_BUF],
         ) as usize;
 
+
         let event_offset = Self::EVENT_LEN_OFFSET + Self::EVENT_LEN_BUF;
 
         Ok(String::from_utf8(
@@ -182,13 +183,15 @@ where
             }
         }
 
-        // If its a reliable packet then we must assign it an ack number and insert it into
-        // the awaiting ack list
-        let ack_number = self.ack_manager.add_awaiting_ack_packet_if_needed(
-            delivery.into(),
-            packet.to_vec(),
-            addr.clone(),
-        );
+        // If its a reliable packet, we must assign it an acknowledgement number so the receiver
+        // can return a packet letting the sender know we got the packet
+        let ack_number = if delivery == PacketDelivery::Reliable as u16
+            || delivery == PacketDelivery::ReliableSequenced as u16
+        {
+            self.ack_manager.get_new_ack_num()
+        } else {
+            0
+        };
 
         // If its an ack packet then we insert it
         LittleEndian::write_u32(
@@ -209,6 +212,15 @@ where
         // Inserts the byte buf into the packet buf
         let bytes_offset = event_offset + padded_event_len;
         packet[bytes_offset..].copy_from_slice(buf);
+
+        // Store complete packet in ack waiting list
+        if ack_number > 0 {
+            self.ack_manager.insert_packet_into_ack_waiting_list(
+                ack_number,
+                packet.to_vec(),
+                addr.clone(),
+            );
+        }
 
         self.socket.send_to(&packet, addr)?;
 
