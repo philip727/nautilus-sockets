@@ -9,7 +9,7 @@ use nautilus_sockets::{
 };
 
 fn main() {
-    let mut server = NautSocket::<NautServer>::new("127.0.0.1:8008").unwrap();
+    let mut socket = NautSocket::<NautServer>::new("127.0.0.1:8008").unwrap();
 
     let names: Arc<RwLock<HashMap<ConnectionId, String>>> = Arc::new(RwLock::new(HashMap::new()));
     let (sender, receiver) = mpsc::channel();
@@ -17,8 +17,8 @@ fn main() {
 
     let names_clone = Arc::clone(&names);
     let sender_clone = Arc::clone(&sender);
-    server.on("new_messenger", move |inner, (addr, packet)| {
-        let Some(id) = inner.connection_addr_to_id.get(&addr) else {
+    socket.on("new_messenger", move |server, (addr, packet)| {
+        let Some(id) = server.connection_addr_to_id.get(&addr) else {
             return;
         };
 
@@ -34,8 +34,8 @@ fn main() {
         let _ = sender_clone.send(join_msg);
     });
 
-    server.on("send_message", move |inner, (addr, packet)| {
-        let Some(id) = inner.connection_addr_to_id.get(&addr) else {
+    socket.on("send_message", move |server, (addr, packet)| {
+        let Some(id) = server.connection_addr_to_id.get(&addr) else {
             return;
         };
 
@@ -56,11 +56,11 @@ fn main() {
     loop {
         std::thread::sleep(Duration::from_millis(1));
         // Must be run for every socket
-        server.poll();
-        server.run_events();
+        socket.poll();
+        socket.run_events();
 
         while let Ok(msg) = receiver.try_recv() {
-            let _ = server.broadcast("recv_message", msg.as_bytes(), PacketDelivery::Reliable);
+            let _ = socket.broadcast("recv_message", msg.as_bytes(), PacketDelivery::Reliable);
         }
     }
 }
