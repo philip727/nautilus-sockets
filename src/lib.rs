@@ -12,4 +12,5 @@ pub mod prelude {
     pub use crate::client::*;
     pub use crate::socket::*;
     pub use crate::packet::*;
+    pub use crate::server::config::*;
 }

@@ -1,12 +1,15 @@
+pub mod config;
 use std::{
     collections::{HashMap, VecDeque},
     marker::PhantomData,
     net::{SocketAddr, ToSocketAddrs, UdpSocket},
     time::{Duration, Instant},
+    usize,
 };
 
 use anyhow::anyhow;
 use byteorder::{ByteOrder, LittleEndian};
+use config::ServerConfig;
 
 use crate::{
     acknowledgement::manager::AcknowledgementManager,
@@ -20,25 +23,54 @@ use crate::{
 
 // Incremental Id
 pub struct NautServer {
-    pub max_connections: u8,
+    max_connections: u8,
 
-    pub connection_addr_to_id: HashMap<SocketAddr, ConnectionId>,
-    pub connection_id_to_addr: HashMap<ConnectionId, SocketAddr>,
-    pub(crate) connections: HashMap<ConnectionId, EstablishedConnection>,
+    connection_addr_to_id: HashMap<SocketAddr, ConnectionId>,
+    connection_id_to_addr: HashMap<ConnectionId, SocketAddr>,
+    connections: HashMap<ConnectionId, EstablishedConnection>,
 
     time_outs: HashMap<ConnectionId, Instant>,
 
-    pub next_id: ConnectionId,
-    pub freed_ids: VecDeque<ConnectionId>,
+    next_id: ConnectionId,
+    freed_ids: VecDeque<ConnectionId>,
 
-    pub idle_connection_timeout: Duration,
+    idle_connection_timeout: Duration,
 
     /// Queue of server events, unless polled this will stack up
-    pub server_events: VecDeque<ServerEvent>,
-    pub max_server_events: u8,
+    server_events: VecDeque<ServerEvent>,
+    max_server_events: u8,
 }
 
 impl NautServer {
+    pub fn new(config: ServerConfig) -> Self {
+        Self {
+            max_connections: config.max_connections,
+            max_server_events: config.max_server_events,
+            idle_connection_timeout: config.idle_connection_time,
+            ..Default::default()
+        }
+    }
+
+    /// Gets the [client's id](ConnectionId) from an [address](SocketAddr)
+    pub fn get_client_addr(&self, id: &ConnectionId) -> Option<&SocketAddr> {
+        self.connection_id_to_addr.get(id)
+    }
+
+    /// Gets the [client's address](SocketAddr) from an [id](ConnectionId)
+    pub fn get_client_id(&self, addr: &SocketAddr) -> Option<&ConnectionId> {
+        self.connection_addr_to_id.get(addr)
+    }
+
+    /// Gets an iterator to all [server events](ServerEvent) in the queue, this will not remove any from queue
+    pub fn get_all_server_events(&self) -> std::collections::vec_deque::Iter<'_, ServerEvent> {
+        self.server_events.iter()
+    }
+
+    /// Gets a [server event](ServerEvent) from the front of the queue
+    pub fn get_server_event(&mut self) -> Option<ServerEvent> {
+        self.server_events.pop_front()
+    }
+
     /// Checks if a client has not sent a packet for the (idle time)[Self::idle_connection_timeout]
     pub(crate) fn any_client_needs_freeing(&self) -> Option<Vec<ConnectionId>> {
         let mut ids = Vec::new();
@@ -121,7 +153,7 @@ impl Default for NautServer {
 impl<'socket> NautSocket<'socket, NautServer> {
     /// Creates a new [event listening socket](crate::socket::NautSocket) with a
     /// [server](NautServer) type
-    pub fn new<A>(addr: A) -> anyhow::Result<Self>
+    pub fn new<A>(addr: A, config: ServerConfig) -> anyhow::Result<Self>
     where
         A: ToSocketAddrs,
     {
@@ -154,6 +186,11 @@ impl<'socket> NautSocket<'socket, NautServer> {
     /// [ack packets](crate::acknowledgement::packet::AckPacket), resolving sequenced packets, emitting
     /// listening events, establishing new connections and disconnecting idling clients
     pub fn run_events(&mut self) {
+        // Clears server events when we reach the limit
+        if self.inner.server_events.len() > self.inner.max_server_events as usize {
+            self.inner.server_events.clear();
+        }
+
         // Disconnect idle clients
         if let Some(ids_to_free) = self.inner.any_client_needs_freeing() {
             for id in ids_to_free.iter() {
@@ -167,7 +204,7 @@ impl<'socket> NautSocket<'socket, NautServer> {
             }
         }
 
-        while let Some((addr, packet)) = self.get_last_received_packet() {
+        while let Some((addr, packet)) = self.get_oldest_packet() {
             let delivery_type = Self::get_delivery_type_from_packet(&packet);
 
             if delivery_type == PACKET_ACK_DELIVERY {
@@ -207,6 +244,11 @@ impl<'socket> NautSocket<'socket, NautServer> {
 
                     *last_recv_seq_num = seq_num;
                 };
+            }
+
+            // Just ignore the packet and dont establish connection as its maxed out
+            if self.inner.connections.len() >= self.inner.max_connections as usize {
+                continue;
             }
 
             // Establishes a connection with a client if not already established

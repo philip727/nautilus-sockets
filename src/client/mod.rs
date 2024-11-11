@@ -20,7 +20,7 @@ pub type ConnectionId = u16;
 #[derive(Default)]
 pub struct NautClient {
     /// The [nautilus server](crate::server::NautServer) we are connected to
-    pub(crate) server_connection: Option<EstablishedConnection>,
+    server_connection: Option<EstablishedConnection>,
 }
 
 impl<'socket> SocketType<'socket> for NautClient {
@@ -84,6 +84,12 @@ impl<'socket> NautSocket<'socket, NautClient> {
         Ok(naut_socket)
     }
 
+    /// Gets the [address](SocketAddr) of the (server)[crate::server::NautServer] we are connected
+    /// to
+    pub fn get_server_address(&self) -> Option<&SocketAddr> {
+        Some(&self.inner.server_connection.as_ref()?.addr)
+    }
+
     /// Establishes a connection to another [nautilus compatible socket](crate::socket::NautSocket)
     pub fn connect_to<A>(&mut self, addr: A) -> anyhow::Result<()>
     where
@@ -113,7 +119,7 @@ impl<'socket> NautSocket<'socket, NautClient> {
     /// [ack packets](crate::acknowledgement::packet::AckPacket), resolving sequenced packets and emitting
     /// listening events
     pub fn run_events(&mut self) {
-        while let Some((addr, packet)) = self.get_last_received_packet() {
+        while let Some((addr, packet)) = self.get_oldest_packet() {
             let delivery_type = Self::get_delivery_type_from_packet(&packet);
 
             if delivery_type == PACKET_ACK_DELIVERY {

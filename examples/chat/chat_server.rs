@@ -7,7 +7,8 @@ use std::{
 use nautilus_sockets::prelude::*;
 
 fn main() {
-    let mut socket = NautSocket::<NautServer>::new("127.0.0.1:8008").unwrap();
+    let mut socket =
+        NautSocket::<NautServer>::new("127.0.0.1:8008", ServerConfig::default()).unwrap();
 
     let names: Arc<RwLock<HashMap<ConnectionId, String>>> = Arc::new(RwLock::new(HashMap::new()));
     let (sender, receiver) = mpsc::channel();
@@ -16,7 +17,7 @@ fn main() {
     let names_clone = Arc::clone(&names);
     let sender_clone = Arc::clone(&sender);
     socket.on("new_messenger", move |server, (addr, packet)| {
-        let Some(id) = server.connection_addr_to_id.get(&addr) else {
+        let Some(id) = server.get_client_id(&addr) else {
             return;
         };
 
@@ -33,7 +34,7 @@ fn main() {
     });
 
     socket.on("send_message", move |server, (addr, packet)| {
-        let Some(id) = server.connection_addr_to_id.get(&addr) else {
+        let Some(id) = server.get_client_id(&addr) else {
             return;
         };
 

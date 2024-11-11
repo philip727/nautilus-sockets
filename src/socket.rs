@@ -92,7 +92,7 @@ where
     }
 
     /// Pops a packet from the front of the [packet queue](Self::packet_queue)
-    pub(crate) fn get_last_received_packet(&mut self) -> Option<ReceivedPacket> {
+    pub(crate) fn get_oldest_packet(&mut self) -> Option<ReceivedPacket> {
         self.packet_queue.pop_front()
     }
 
