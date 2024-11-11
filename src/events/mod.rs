@@ -1,28 +1,22 @@
-use std::{
-    collections::HashMap,
-    net::SocketAddr,
-    sync::{Arc, RwLock},
-};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
 pub type CallbackArgs<'callback> = (SocketAddr, &'callback [u8]);
-pub type Callback<T> = dyn Fn(&Arc<RwLock<T>>, CallbackArgs) + Send + Sync;
+pub type Callback<T> = dyn Fn(&T, CallbackArgs) + Send + Sync;
 
 pub struct EventEmitter<T> {
     pub event_callbacks: HashMap<String, Vec<Arc<Callback<T>>>>,
-    pub value: Arc<RwLock<T>>,
 }
 
 impl<T> EventEmitter<T> {
-    pub fn new(value: Arc<RwLock<T>>) -> Self {
+    pub fn new() -> Self {
         Self {
             event_callbacks: HashMap::new(),
-            value,
         }
     }
 
     pub fn register_event<F>(&mut self, event: &str, f: F)
     where
-        F: Fn(&Arc<RwLock<T>>, CallbackArgs) + Send + Sync + 'static,
+        F: Fn(&T, CallbackArgs) + Send + Sync + 'static,
     {
         let event = event.to_string();
         if let Some(callbacks) = self.event_callbacks.get_mut(&event) {
@@ -33,13 +27,19 @@ impl<T> EventEmitter<T> {
         self.event_callbacks.insert(event, vec![Arc::new(f)]);
     }
 
-    pub fn emit_event(&self, event: &str, args: CallbackArgs) {
+    pub fn emit_event(&self, event: &str, value: &T, args: CallbackArgs) {
         let Some(callbacks) = self.event_callbacks.get(event) else {
             return;
         };
 
         for callback in callbacks {
-            callback(&self.value, args)
+            callback(value, args)
         }
+    }
+}
+
+impl<T> Default for EventEmitter<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }

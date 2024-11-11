@@ -35,7 +35,7 @@ mod tests {
             std::thread::sleep(Duration::from_millis(1));
 
             let mut server = server_clone.write().unwrap();
-            let _ = server.poll();
+            server.poll();
             let _ = server.broadcast("meow", &[0, 53, 52, 89], PacketDelivery::ReliableSequenced);
             server.run_events();
         });
@@ -47,7 +47,7 @@ mod tests {
         });
 
         loop {
-            let _ = client.poll();
+            client.poll();
             client.run_events();
         }
     }

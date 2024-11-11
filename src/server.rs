@@ -10,13 +10,12 @@ use anyhow::anyhow;
 use byteorder::{ByteOrder, LittleEndian};
 
 use crate::{
-    acknowledgement::{AckPacket, AcknowledgementManager},
+    acknowledgement::AcknowledgementManager,
     client::ConnectionId,
-    connection::{self, EstablishedConnection},
+    connection::EstablishedConnection,
     events::EventEmitter,
     packet::{PacketDelivery, PACKET_ACK_DELIVERY},
     sequence::SequenceNumber,
-    server,
     socket::{NautSocket, SocketType},
 };
 
@@ -41,28 +40,41 @@ pub struct NautServer {
 }
 
 impl NautServer {
-    pub fn disconnect_and_free_clients(&mut self) {
-        let time_outs = self.time_outs.clone();
-        for (id, time) in time_outs {
-            if Instant::now().duration_since(time) < self.idle_connection_timeout {
+    /// Checks if a client has not sent a packet for the (idle time)[Self::idle_connection_timeout]
+    pub(crate) fn any_client_needs_freeing(&self) -> Option<Vec<ConnectionId>> {
+        let mut ids = Vec::new();
+        for (id, time) in self.time_outs.iter() {
+            if Instant::now().duration_since(*time) < self.idle_connection_timeout {
                 continue;
             }
-
-            self.freed_ids.push_back(id);
-            let Some(addr) = self.connection_id_to_addr.remove(&id) else {
-                println!("Failed to find address of idle'd client with id: {id}");
-                continue;
-            };
-
-            self.connection_addr_to_id.remove(&addr);
-            println!("Timed out client with id: {id}");
-            self.time_outs.remove(&id);
-
-            self.server_events
-                .push_back(ServerEvent::OnClientTimeout(id));
+            ids.push(*id);
         }
+
+        if ids.is_empty() {
+            return None;
+        }
+
+        Some(ids)
     }
 
+    /// Frees a client up to the server
+    pub(crate) fn free_client(&mut self, id: ConnectionId) {
+        self.freed_ids.push_back(id);
+        let Some(addr) = self.connection_id_to_addr.remove(&id) else {
+            println!("Failed to find address of idle'd client with id: {id}");
+            return;
+        };
+
+        self.connection_addr_to_id.remove(&addr);
+        println!("Timed out client with id: {id}");
+        self.time_outs.remove(&id);
+        self.connections.remove(&id);
+
+        self.server_events
+            .push_back(ServerEvent::OnClientTimeout(id));
+    }
+
+    /// Establishes a new connection to a new [socket address](SocketAddr)
     pub fn establish_new_connections(&mut self, addr: SocketAddr) {
         // Gets a new client id
         let client_id = {
@@ -110,8 +122,8 @@ impl<'socket> NautSocket<'socket, NautServer> {
         let socket = UdpSocket::bind(addr)?;
         socket.set_nonblocking(true)?;
 
-        let server = Arc::new(RwLock::new(NautServer::default()));
-        let event_emitter = EventEmitter::new(Arc::clone(&server));
+        let server = NautServer::default();
+        let event_emitter = EventEmitter::new();
         Ok(Self {
             socket,
             packet_queue: VecDeque::new(),
@@ -122,17 +134,19 @@ impl<'socket> NautSocket<'socket, NautServer> {
         })
     }
 
+    pub fn server(&self) -> &NautServer {
+        &self.inner
+    }
+
+    pub fn server_mut(&mut self) -> &mut NautServer {
+        &mut self.inner
+    }
+
     pub fn run_events(&mut self) {
         // Disconnect idle clients
-        {
-            if let Ok(mut inner) = self.inner.write() {
-                // Disconnects the idle'd clients each event loop
-                inner.disconnect_and_free_clients();
-
-                // Checks if the server events queue has hit its max
-                if inner.server_events.len() >= inner.max_server_events as usize {
-                    inner.server_events.clear();
-                }
+        if let Some(ids_to_free) = self.inner.any_client_needs_freeing() {
+            for id in ids_to_free.iter() {
+                self.inner.free_client(*id);
             }
         }
 
@@ -158,15 +172,13 @@ impl<'socket> NautSocket<'socket, NautServer> {
                 continue;
             };
 
-            let Ok(mut server) = self.inner.write() else {
-                continue;
-            };
-
             if delivery_type == PacketDelivery::ReliableSequenced
                 || delivery_type == PacketDelivery::UnreliableSequenced
             {
                 let seq_num = Self::get_seq_from_packet(&packet);
-                if let Some(last_recv_seq_num) = server.last_recv_seq_num_for_event(&addr, &event) {
+                if let Some(last_recv_seq_num) =
+                    self.inner.last_recv_seq_num_for_event(&addr, &event)
+                {
                     // Discard packet
                     if seq_num < *last_recv_seq_num {
                         println!(
@@ -181,19 +193,20 @@ impl<'socket> NautSocket<'socket, NautServer> {
             }
 
             // Establishes a connection with a client if not already established
-            if !server.connection_addr_to_id.contains_key(&addr) {
-                server.establish_new_connections(addr);
+            if !self.inner.connection_addr_to_id.contains_key(&addr) {
+                self.inner.establish_new_connections(addr);
             }
 
-            let Some(client) = server.connection_addr_to_id.get(&addr) else {
+            let Some(client) = self.inner.connection_addr_to_id.get(&addr) else {
                 continue;
             };
 
             let client = *client;
-            server.time_outs.insert(client, Instant::now());
+            self.inner.time_outs.insert(client, Instant::now());
 
             let bytes = Self::get_packet_bytes(&packet);
-            self.event_emitter.emit_event(&event, (addr, &bytes));
+            self.event_emitter
+                .emit_event(&event, &self.inner, (addr, &bytes));
         }
 
         // Retry ack packets
@@ -204,13 +217,8 @@ impl<'socket> NautSocket<'socket, NautServer> {
     where
         D: Into<PacketDelivery> + std::cmp::PartialEq<u16> + Copy,
     {
-        let connection_ids: Vec<ConnectionId> = {
-            let server = self.inner.read().map_err(|_| {
-                anyhow!("Failed to get RwLock read guard in broadcast with event {event}")
-            })?;
-
-            server.connection_id_to_addr.keys().cloned().collect()
-        };
+        let connection_ids: Vec<ConnectionId> =
+            { self.inner.connection_id_to_addr.keys().cloned().collect() };
 
         for id in connection_ids {
             let _ = self.send(event, buf, delivery, id);
@@ -230,14 +238,13 @@ impl<'socket> NautSocket<'socket, NautServer> {
         D: Into<PacketDelivery> + std::cmp::PartialEq<u16> + Copy,
     {
         let addr = {
-            let server = self
+            *self
                 .inner
-                .read()
-                .map_err(|_| anyhow!("Failed to get inner rwlock guard"))?;
-
-            *server.connection_id_to_addr.get(&client).ok_or(anyhow!(
-                "There is no associated address with this client id"
-            ))?
+                .connection_id_to_addr
+                .get(&client)
+                .ok_or(anyhow!(
+                    "There is no associated address with this client id"
+                ))?
         };
 
         let _ = self.send_by_addr(event, buf, delivery, addr.to_string());
