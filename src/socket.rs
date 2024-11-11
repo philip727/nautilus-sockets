@@ -3,15 +3,13 @@ use std::{
     marker::PhantomData,
     net::{SocketAddr, ToSocketAddrs, UdpSocket},
     str::FromStr,
-    sync::{Arc, RwLock},
     time::Instant,
 };
 
-use anyhow::anyhow;
 use byteorder::{ByteOrder, LittleEndian};
 
 use crate::{
-    acknowledgement::{AckPacket, AcknowledgementManager},
+    acknowledgement::{manager::AcknowledgementManager, packet::AckPacket},
     events::{CallbackArgs, EventEmitter},
     packet::{PacketDelivery, PACKET_ACK_DELIVERY},
     sequence::SequenceNumber,
@@ -172,7 +170,9 @@ where
         {
             let addr = Into::<String>::into(addr.clone());
             let addr = SocketAddr::from_str(&addr).unwrap();
-            let seq_num = self.inner.update_current_send_seq_num_for_event(&addr, event);
+            let seq_num = self
+                .inner
+                .update_current_send_seq_num_for_event(&addr, event);
 
             if let Some(seq_num) = seq_num {
                 LittleEndian::write_u32(
@@ -259,7 +259,7 @@ where
 /// A socket must have a way to handle sequenced packets for clients. Otherwise, it will manage
 /// everything the same way
 pub trait SocketType<'socket>: Default {
-    /// Updates the current (sequence number)[SequenceNumber] for that specific event and should be
+    /// Updates the current [sequence number](SequenceNumber) for that specific event and should be
     /// handled on a per client basis
     fn update_current_send_seq_num_for_event(
         &mut self,

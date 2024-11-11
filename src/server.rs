@@ -2,7 +2,6 @@ use std::{
     collections::{HashMap, VecDeque},
     marker::PhantomData,
     net::{SocketAddr, ToSocketAddrs, UdpSocket},
-    sync::{Arc, RwLock},
     time::{Duration, Instant},
 };
 
@@ -10,7 +9,7 @@ use anyhow::anyhow;
 use byteorder::{ByteOrder, LittleEndian};
 
 use crate::{
-    acknowledgement::AcknowledgementManager,
+    acknowledgement::manager::AcknowledgementManager,
     client::ConnectionId,
     connection::EstablishedConnection,
     events::EventEmitter,
@@ -66,15 +65,20 @@ impl NautServer {
         };
 
         self.connection_addr_to_id.remove(&addr);
-        println!("Timed out client with id: {id}");
         self.time_outs.remove(&id);
         self.connections.remove(&id);
-
-        self.server_events
-            .push_back(ServerEvent::OnClientTimeout(id));
     }
 
-    /// Establishes a new connection to a new [socket address](SocketAddr)
+    /// Closes a connection with a client and pushes a [client disconnected event](ServerEvent::OnClientDisconnected)
+    /// to the server events queue
+    pub fn close_connection_with_client(&mut self, id: ConnectionId) {
+        self.free_client(id);
+        self.server_events
+            .push_back(ServerEvent::OnClientDisconnected(id));
+    }
+
+    /// Establishes a new connection to a new [socket address](SocketAddr) and pushes a
+    /// [client connected event](ServerEvent::OnClientConnected) to the server events queue
     pub fn establish_new_connections(&mut self, addr: SocketAddr) {
         // Gets a new client id
         let client_id = {
@@ -115,6 +119,8 @@ impl Default for NautServer {
 }
 
 impl<'socket> NautSocket<'socket, NautServer> {
+    /// Creates a new [event listening socket](crate::socket::NautSocket) with a
+    /// [server](NautServer) type
     pub fn new<A>(addr: A) -> anyhow::Result<Self>
     where
         A: ToSocketAddrs,
@@ -134,19 +140,30 @@ impl<'socket> NautSocket<'socket, NautServer> {
         })
     }
 
+    /// Gets a reference to the [server](NautServer)
     pub fn server(&self) -> &NautServer {
         &self.inner
     }
 
+    /// Gets a mutable reference to the [server](NautServer)
     pub fn server_mut(&mut self) -> &mut NautServer {
         &mut self.inner
     }
 
+    /// Gets the packets from the packet queue and will handle returning
+    /// [ack packets](crate::acknowledgement::packet::AckPacket), resolving sequenced packets, emitting
+    /// listening events, establishing new connections and disconnecting idling clients
     pub fn run_events(&mut self) {
         // Disconnect idle clients
         if let Some(ids_to_free) = self.inner.any_client_needs_freeing() {
             for id in ids_to_free.iter() {
                 self.inner.free_client(*id);
+
+                self.inner
+                    .server_events
+                    .push_back(ServerEvent::OnClientTimeout(*id));
+
+                println!("Timed out client with id: {id}");
             }
         }
 
@@ -213,6 +230,7 @@ impl<'socket> NautSocket<'socket, NautServer> {
         self.retry_ack_packets();
     }
 
+    /// Sends an event message to all [established connections](EstablishedConnection)
     pub fn broadcast<D>(&mut self, event: &str, buf: &[u8], delivery: D) -> anyhow::Result<()>
     where
         D: Into<PacketDelivery> + std::cmp::PartialEq<u16> + Copy,
@@ -227,6 +245,7 @@ impl<'socket> NautSocket<'socket, NautServer> {
         Ok(())
     }
 
+    /// Sends an event message to the [server](crate::server::NautServer) we are connected to
     pub fn send<D>(
         &mut self,
         event: &str,
@@ -293,6 +312,10 @@ impl<'socket> SocketType<'socket> for NautServer {
 
 #[derive(Clone, Copy)]
 pub enum ServerEvent {
-    OnClientConnected(u16),
-    OnClientTimeout(u16),
+    /// Pushed to the server event queue when a client connects
+    OnClientConnected(ConnectionId),
+    /// Pushed to the server event queue when a client times out
+    OnClientTimeout(ConnectionId),
+    /// Pushes to the server event queue when a client is disconnected
+    OnClientDisconnected(ConnectionId),
 }

@@ -3,14 +3,12 @@ use std::{
     marker::PhantomData,
     net::{SocketAddr, ToSocketAddrs, UdpSocket},
     str::FromStr,
-    sync::{Arc, RwLock},
 };
 
-use anyhow::anyhow;
 use byteorder::{ByteOrder, LittleEndian};
 
 use crate::{
-    acknowledgement::AcknowledgementManager,
+    acknowledgement::{manager::AcknowledgementManager, packet::AckPacket},
     connection::EstablishedConnection,
     events::EventEmitter,
     packet::{PacketDelivery, PACKET_ACK_DELIVERY},
@@ -21,6 +19,7 @@ use crate::{
 pub type ConnectionId = u16;
 #[derive(Default)]
 pub struct NautClient {
+    /// The [nautilus server](crate::server::NautServer) we are connected to
     pub(crate) server_connection: Option<EstablishedConnection>,
 }
 
@@ -64,6 +63,7 @@ impl<'socket> SocketType<'socket> for NautClient {
 }
 
 impl<'socket> NautSocket<'socket, NautClient> {
+    /// Creates a new [event listening socket](crate::socket::NautSocket) with a [client](NautClient) type
     pub fn new<A>(addr: A) -> anyhow::Result<Self>
     where
         A: ToSocketAddrs,
@@ -84,6 +84,7 @@ impl<'socket> NautSocket<'socket, NautClient> {
         Ok(naut_socket)
     }
 
+    /// Establishes a connection to another [nautilus compatible socket](crate::socket::NautSocket)
     pub fn connect_to<A>(&mut self, addr: A) -> anyhow::Result<()>
     where
         A: ToSocketAddrs + Into<String> + Clone,
@@ -96,19 +97,21 @@ impl<'socket> NautSocket<'socket, NautClient> {
         Ok(self.socket().connect(addr)?)
     }
 
+    /// Sends an event message to the [server](crate::server::NautServer) we are connected to
     pub fn send<D>(&mut self, event: &str, buf: &[u8], delivery: D) -> anyhow::Result<()>
     where
         D: Into<PacketDelivery> + std::cmp::PartialEq<u16> + Copy,
     {
-        let server_addr = {
-            self.inner.server_connection.as_ref().unwrap().addr
-        };
+        let server_addr = { self.inner.server_connection.as_ref().unwrap().addr };
 
         self.send_by_addr(event, buf, delivery, server_addr.to_string())?;
 
         Ok(())
     }
 
+    /// Gets the packets from the packet queue and will handle returning
+    /// [ack packets](crate::acknowledgement::packet::AckPacket), resolving sequenced packets and emitting
+    /// listening events
     pub fn run_events(&mut self) {
         while let Some((addr, packet)) = self.get_last_received_packet() {
             let delivery_type = Self::get_delivery_type_from_packet(&packet);
@@ -125,12 +128,12 @@ impl<'socket> NautSocket<'socket, NautClient> {
                 continue;
             }
 
+            // Gets the event title from the packet
             let Ok(event) = Self::get_event_from_packet(&packet) else {
                 continue;
             };
 
             let delivery_type = Into::<PacketDelivery>::into(delivery_type);
-
             // We must send an ack packet with the packet num back to the sender
             if delivery_type == PacketDelivery::Reliable
                 || delivery_type == PacketDelivery::ReliableSequenced
@@ -143,7 +146,9 @@ impl<'socket> NautSocket<'socket, NautClient> {
                 || delivery_type == PacketDelivery::UnreliableSequenced
             {
                 let seq_num = Self::get_seq_from_packet(&packet);
-                if let Some(last_recv_seq_num) = self.inner.last_recv_seq_num_for_event(&addr, &event) {
+                if let Some(last_recv_seq_num) =
+                    self.inner.last_recv_seq_num_for_event(&addr, &event)
+                {
                     // Discard packet
                     if seq_num < *last_recv_seq_num {
                         println!(
@@ -158,7 +163,9 @@ impl<'socket> NautSocket<'socket, NautClient> {
             }
 
             let bytes = Self::get_packet_bytes(&packet);
-            self.event_emitter.emit_event(&event, &self.inner, (addr, &bytes));
+            // Emits the event to the event listeners
+            self.event_emitter
+                .emit_event(&event, &self.inner, (addr, &bytes));
         }
 
         // Retry ack packets

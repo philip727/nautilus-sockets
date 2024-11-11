@@ -1,41 +1,24 @@
-use std::{
-    collections::HashMap,
-    net::ToSocketAddrs,
-    time::{Duration, Instant},
-};
+use std::{collections::HashMap, net::ToSocketAddrs, time::{Duration, Instant}};
 
 use crate::packet::PacketDelivery;
 
-pub type AckNumber = u32;
+use super::packet::{AckNumber, AckPacket};
+
 pub const ACK_RESET_LIMIT: AckNumber = 128_000;
 
-pub struct AckPacket {
-    pub bytes: Vec<u8>,
-    pub time_created: Instant,
-    pub target: String,
-}
-
-impl AckPacket {
-    pub fn new<A>(bytes: Vec<u8>, created: Instant, target: A) -> Self
-    where
-        A: ToSocketAddrs + Into<String>,
-    {
-        Self {
-            bytes,
-            time_created: created,
-            target: target.into(),
-        }
-    }
-}
-
+/// Handles packet acknowledgements
 pub struct AcknowledgementManager {
+    /// The last ack number that was sent out
     pub last_ack: AckNumber,
+    /// Packets we are waiting on being acknowledged
     pub packets_waiting_on_ack: HashMap<AckNumber, AckPacket>,
+    /// How long to retry sending a packet after not being acknowledged
     pub ack_retry_time: Duration,
 }
 
 impl AcknowledgementManager {
-    pub fn new() -> Self {
+    /// Creates a new acknowledgement manager
+    pub(crate) fn new() -> Self {
         Self {
             last_ack: 0,
             packets_waiting_on_ack: HashMap::new(),
@@ -43,6 +26,8 @@ impl AcknowledgementManager {
         }
     }
 
+    /// Adds a packet that requires an ack to the waiting list, if the packet does not receive an
+    /// ack it will be resent to its target
     pub(crate) fn add_awaiting_ack_packet_if_needed<A>(
         &mut self,
         packet_delivery: PacketDelivery,

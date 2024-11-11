@@ -1,8 +1,17 @@
+/// Describes how a packet will reach its target
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PacketDelivery {
+    /// A packet which has no guarantee of reaching its target, and if it doesn't it will be
+    /// forgotten
     Unreliable = 0,
+    /// A packet which has no guarantee of reaching its target, and will be discarded if not the
+    /// latest packet in sequence or will be forgotten if it does not reach the target
     UnreliableSequenced = 1,
+    /// A packet which will require an acknowledgement. If the package receives no ack it will be
+    /// resent to the target
     Reliable = 2,
+    /// A packet which will require an acknowledgement. If the package receives no ack it will be
+    /// resent to the target, however the packet may be discared if not the latest packet
     ReliableSequenced = 3,
 }
 
@@ -25,4 +34,5 @@ impl PartialEq<u16> for PacketDelivery {
     }
 }
 
+/// The packet delivery type for an acknowledgement packet
 pub(crate) const PACKET_ACK_DELIVERY: u16 = 10;
