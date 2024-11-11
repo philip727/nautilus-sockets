@@ -251,8 +251,6 @@ where
         // Write ack num into ack delivery packet
         LittleEndian::write_u32(&mut buf[2..6], ack_num);
 
-        println!("Sending ack num {ack_num} for packet");
-
         let _ = self.socket.send_to(&buf, addr);
     }
 }

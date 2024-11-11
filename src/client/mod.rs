@@ -116,7 +116,6 @@ impl<'socket> NautSocket<'socket, NautClient> {
             if delivery_type == PACKET_ACK_DELIVERY {
                 let ack_num = LittleEndian::read_u32(&packet[2..6]);
                 self.ack_manager.packets_waiting_on_ack.remove(&ack_num);
-                println!("received ack {ack_num}");
 
                 continue;
             }
