@@ -4,9 +4,7 @@ use std::{
     time::Duration,
 };
 
-use nautilus_sockets::{
-    client::ConnectionId, packet::PacketDelivery, server::NautServer, socket::NautSocket,
-};
+use nautilus_sockets::prelude::*;
 
 fn main() {
     let mut socket = NautSocket::<NautServer>::new("127.0.0.1:8008").unwrap();

@@ -8,7 +8,7 @@ use std::{
 use byteorder::{ByteOrder, LittleEndian};
 
 use crate::{
-    acknowledgement::{manager::AcknowledgementManager, packet::AckPacket},
+    acknowledgement::manager::AcknowledgementManager,
     connection::EstablishedConnection,
     events::EventEmitter,
     packet::{PacketDelivery, PACKET_ACK_DELIVERY},

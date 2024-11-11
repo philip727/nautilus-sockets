@@ -2,7 +2,7 @@ use std::{collections::HashMap, net::SocketAddr};
 
 use crate::sequence::SequenceNumber;
 
-pub struct EstablishedConnection {
+pub(crate) struct EstablishedConnection {
     /// Each individual event has its own [seq number](crate::sequence::SequenceNumber)
     pub current_send_seq_num: HashMap<String, SequenceNumber>,
     /// The last seq number we received for that event

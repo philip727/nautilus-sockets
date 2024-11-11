@@ -1,9 +1,9 @@
 use std::{net::ToSocketAddrs, time::Instant};
 
-pub type AckNumber = u32;
+pub(crate) type AckNumber = u32;
 
 /// A packet awaiting acknowledgement
-pub struct AckPacket {
+pub(crate) struct AckPacket {
     /// The original bytes of the packet
     pub bytes: Vec<u8>,
     /// The time the packet was sent

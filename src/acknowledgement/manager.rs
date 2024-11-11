@@ -4,10 +4,10 @@ use crate::packet::PacketDelivery;
 
 use super::packet::{AckNumber, AckPacket};
 
-pub const ACK_RESET_LIMIT: AckNumber = 128_000;
+pub(crate) const ACK_RESET_LIMIT: AckNumber = 128_000;
 
 /// Handles packet acknowledgements
-pub struct AcknowledgementManager {
+pub(crate) struct AcknowledgementManager {
     /// The last ack number that was sent out
     pub last_ack: AckNumber,
     /// Packets we are waiting on being acknowledged

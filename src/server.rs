@@ -24,7 +24,7 @@ pub struct NautServer {
 
     pub connection_addr_to_id: HashMap<SocketAddr, ConnectionId>,
     pub connection_id_to_addr: HashMap<ConnectionId, SocketAddr>,
-    pub connections: HashMap<ConnectionId, EstablishedConnection>,
+    pub(crate) connections: HashMap<ConnectionId, EstablishedConnection>,
 
     time_outs: HashMap<ConnectionId, Instant>,
 
@@ -79,7 +79,7 @@ impl NautServer {
 
     /// Establishes a new connection to a new [socket address](SocketAddr) and pushes a
     /// [client connected event](ServerEvent::OnClientConnected) to the server events queue
-    pub fn establish_new_connections(&mut self, addr: SocketAddr) {
+    pub(crate) fn establish_new_connection(&mut self, addr: SocketAddr) {
         // Gets a new client id
         let client_id = {
             if let Some(client_id) = self.freed_ids.pop_front() {
@@ -211,7 +211,7 @@ impl<'socket> NautSocket<'socket, NautServer> {
 
             // Establishes a connection with a client if not already established
             if !self.inner.connection_addr_to_id.contains_key(&addr) {
-                self.inner.establish_new_connections(addr);
+                self.inner.establish_new_connection(addr);
             }
 
             let Some(client) = self.inner.connection_addr_to_id.get(&addr) else {

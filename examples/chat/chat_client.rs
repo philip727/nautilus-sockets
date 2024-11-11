@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use nautilus_sockets::{client::NautClient, packet::PacketDelivery, socket::NautSocket};
+use nautilus_sockets::prelude::*;
 
 fn main() {
     let socket = Arc::new(RwLock::new(

@@ -1,1 +1,1 @@
-pub type SequenceNumber = u32;
+pub(crate) type SequenceNumber = u32;
