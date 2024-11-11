@@ -213,8 +213,13 @@ impl<'socket> NautSocket<'socket, NautServer> {
                 continue;
             }
 
+            // Check size here instead of in poll as ack packets do not fit into padding
+            if packet.len() < Self::PACKET_PADDING {
+                continue;
+            }
+
             let delivery_type = Into::<PacketDelivery>::into(delivery_type);
-            // We must send an ack packet with the packet num back to the sender
+            // Send a packet  to acknowledge the sender we have recieved their packet
             if delivery_type == PacketDelivery::Reliable
                 || delivery_type == PacketDelivery::ReliableSequenced
             {

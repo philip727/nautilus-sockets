@@ -122,6 +122,7 @@ impl<'socket> NautSocket<'socket, NautClient> {
         while let Some((addr, packet)) = self.get_oldest_packet() {
             let delivery_type = Self::get_delivery_type_from_packet(&packet);
 
+            // We have received acknowledgement of a packet we have sent
             if delivery_type == PACKET_ACK_DELIVERY {
                 let ack_num = LittleEndian::read_u32(&packet[2..6]);
                 self.ack_manager.packets_waiting_on_ack.remove(&ack_num);
@@ -140,7 +141,7 @@ impl<'socket> NautSocket<'socket, NautClient> {
             };
 
             let delivery_type = Into::<PacketDelivery>::into(delivery_type);
-            // We must send an ack packet with the packet num back to the sender
+            // Send a packet  to acknowledge the sender we have recieved their packet
             if delivery_type == PacketDelivery::Reliable
                 || delivery_type == PacketDelivery::ReliableSequenced
             {
