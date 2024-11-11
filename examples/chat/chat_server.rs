@@ -16,6 +16,7 @@ fn main() {
 
     let names_clone = Arc::clone(&names);
     let sender_clone = Arc::clone(&sender);
+
     socket.on("new_messenger", move |server, (addr, packet)| {
         let Some(id) = server.get_client_id(&addr) else {
             return;

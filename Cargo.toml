@@ -14,3 +14,7 @@ path = "examples/chat/chat_client.rs"
 [[example]]
 name = "chat_server"
 path = "examples/chat/chat_server.rs"
+
+[[example]]
+name = "godot_server"
+path = "examples/godot/godot_server.rs"
