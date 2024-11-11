@@ -4,7 +4,6 @@ use std::{
     marker::PhantomData,
     net::{SocketAddr, ToSocketAddrs, UdpSocket},
     time::{Duration, Instant},
-    usize,
 };
 
 use anyhow::anyhow;
@@ -160,7 +159,7 @@ impl<'socket> NautSocket<'socket, NautServer> {
         let socket = UdpSocket::bind(addr)?;
         socket.set_nonblocking(true)?;
 
-        let server = NautServer::default();
+        let server = NautServer::new(config);
         let event_emitter = EventEmitter::new();
         Ok(Self {
             socket,
