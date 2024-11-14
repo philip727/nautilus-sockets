@@ -17,7 +17,7 @@ let positions: Arc<Mutex<HashMap<ConnectionId, Vector3>>> = Arc::new(Mutex::new(
 let position_clone = Arc::clone(&positions);
 // Everytime we recieve a packet with this event, it will perform this callback
 socket.on("recieve_position", move |server, (addr, packet)| {
-    // Gets a lockguard for the positons
+    // Gets a lockguard for the positions
     let Ok(mut positions) = position_clone.lock() else {
         return;
     };

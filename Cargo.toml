@@ -2,6 +2,12 @@
 name = "nautilus-sockets"
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
+keywords = ["networking", "udp", "sockets", "network"]
+categories = ["network-programming"]
+description = "A UDP Socket that listens for events"
+repository = "https://github.com/philip727/nautilus-sockets"
+
 
 [dependencies]
 anyhow = "1.0.93"
