@@ -1,3 +1,5 @@
+pub mod events;
+
 use std::{
     collections::VecDeque,
     marker::PhantomData,
@@ -11,7 +13,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use crate::{
     acknowledgement::{manager::AcknowledgementManager, packet::AckPacket},
     events::{CallbackArgs, EventEmitter},
-    packet::{PacketDelivery, PACKET_ACK_DELIVERY},
+    packet::{IntoPacketDelivery, PacketDelivery},
     sequence::SequenceNumber,
 };
 
@@ -92,7 +94,7 @@ where
     }
 
     /// Pops a packet from the front of the [packet queue](Self::packet_queue)
-    pub(crate) fn get_oldest_packet(&mut self) -> Option<ReceivedPacket> {
+    pub(crate) fn oldest_packet_in_queue(&mut self) -> Option<ReceivedPacket> {
         self.packet_queue.pop_front()
     }
 
@@ -119,7 +121,6 @@ where
             &buf[Self::EVENT_LEN_OFFSET..Self::EVENT_LEN_OFFSET + Self::EVENT_LEN_BUF],
         ) as usize;
 
-
         let event_offset = Self::EVENT_LEN_OFFSET + Self::EVENT_LEN_BUF;
 
         Ok(String::from_utf8(
@@ -142,33 +143,31 @@ where
 
     /// Sends a packet to a [socket address](SocketAddr) and inserts the [packet delivery type](PacketDelivery), [AckNumber] and [SequenceNumber] and the
     /// remaining bytes sent for the actual event
-    pub(crate) fn send_by_addr<A, D>(
+    pub(crate) fn send_by_addr<A>(
         &mut self,
         event: &str,
         buf: &[u8],
-        delivery: D,
+        delivery: PacketDelivery,
         addr: A,
     ) -> anyhow::Result<()>
     where
         A: ToSocketAddrs + Into<String> + Clone,
-        D: Into<PacketDelivery> + std::cmp::PartialEq<u16> + Copy,
     {
         // Stays consistent with memory layout
         let pad = (4 - (event.len() % 4)) % 4;
         let padded_event_len = event.len() + pad;
         let total_len = Self::PACKET_PADDING + padded_event_len + buf.len();
+        let delivery_type = delivery.packet_delivery_into()?;
 
         let mut packet = vec![0; total_len];
         // Inserts the packet delivery type into the packet
         LittleEndian::write_u16(
             &mut packet
                 [Self::DELIVERY_TYPE_OFFSET..Self::DELIVERY_TYPE_OFFSET + Self::DELIVERY_TYPE_BUF],
-            delivery.into() as u16,
+            delivery_type,
         );
 
-        if delivery == PacketDelivery::ReliableSequenced as u16
-            || delivery == PacketDelivery::UnreliableSequenced as u16
-        {
+        if delivery.is_sequenced() {
             let addr = Into::<String>::into(addr.clone());
             let addr = SocketAddr::from_str(&addr).unwrap();
             let seq_num = self
@@ -185,9 +184,7 @@ where
 
         // If its a reliable packet, we must assign it an acknowledgement number so the receiver
         // can return a packet letting the sender know we got the packet
-        let ack_number = if delivery == PacketDelivery::Reliable as u16
-            || delivery == PacketDelivery::ReliableSequenced as u16
-        {
+        let ack_number = if delivery.is_reliable() {
             self.ack_manager.get_new_ack_num()
         } else {
             0
@@ -245,7 +242,7 @@ where
     }
 
     /// Sends an [acknowledgement packet](AckPacket) to the [address](SocketAddr)
-    pub(crate) fn send_ack_packet<A>(&self, addr: A, packet: &[u8])
+    pub(crate) fn send_ack_packet<A>(&self, addr: A, packet: &[u8]) -> anyhow::Result<()>
     where
         A: ToSocketAddrs,
     {
@@ -255,7 +252,7 @@ where
         LittleEndian::write_u16(
             &mut buf
                 [Self::DELIVERY_TYPE_OFFSET..Self::DELIVERY_TYPE_OFFSET + Self::DELIVERY_TYPE_BUF],
-            PACKET_ACK_DELIVERY,
+            PacketDelivery::ack_delivery().packet_delivery_into()?,
         );
 
         // Get the ack num from the original packet
@@ -263,7 +260,9 @@ where
         // Write ack num into ack delivery packet
         LittleEndian::write_u32(&mut buf[2..6], ack_num);
 
-        let _ = self.socket.send_to(&buf, addr);
+        self.socket.send_to(&buf, addr)?;
+
+        Ok(())
     }
 }
 
