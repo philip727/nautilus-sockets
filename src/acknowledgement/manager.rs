@@ -4,11 +4,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::packet::PacketDelivery;
-
 use super::packet::{AckNumber, AckPacket};
 
-pub(crate) const ACK_RESET_LIMIT: AckNumber = 128_000;
+pub(crate) const ACK_RESET_LIMIT: u32 = 128_000;
 
 /// Handles packet acknowledgements
 pub(crate) struct AcknowledgementManager {
@@ -24,17 +22,17 @@ impl AcknowledgementManager {
     /// Creates a new acknowledgement manager
     pub(crate) fn new() -> Self {
         Self {
-            last_ack: 0,
+            last_ack: AckNumber::new(0),
             packets_waiting_on_ack: HashMap::new(),
             ack_retry_time: Duration::from_secs(2),
         }
     }
 
     pub(crate) fn get_new_ack_num(&mut self) -> AckNumber {
-        self.last_ack += 1;
+        self.last_ack += AckNumber::new(1);
 
-        if self.last_ack >= ACK_RESET_LIMIT {
-            self.last_ack = 0;
+        if self.last_ack.raw() >= ACK_RESET_LIMIT {
+            self.last_ack = AckNumber::new(0);
         }
 
         self.last_ack

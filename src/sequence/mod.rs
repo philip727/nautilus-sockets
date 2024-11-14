@@ -1,7 +1,7 @@
 use std::ops::{Add, AddAssign};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct SequenceNumber(u32);
+pub(crate) struct SequenceNumber(u32);
 
 impl SequenceNumber {
     pub fn new(value: u32) -> Self {

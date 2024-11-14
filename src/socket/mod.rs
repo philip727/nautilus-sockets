@@ -11,7 +11,7 @@ use std::{
 use byteorder::{ByteOrder, LittleEndian};
 
 use crate::{
-    acknowledgement::{manager::AcknowledgementManager, packet::AckPacket},
+    acknowledgement::{manager::AcknowledgementManager, packet::{AckNumber, AckPacket}},
     events::{CallbackArgs, EventEmitter},
     packet::{IntoPacketDelivery, PacketDelivery},
     sequence::SequenceNumber,
@@ -189,13 +189,13 @@ where
         let ack_number = if delivery.is_reliable() {
             self.ack_manager.get_new_ack_num()
         } else {
-            0
+            AckNumber::new(0)
         };
 
         // If its an ack packet then we insert it
         LittleEndian::write_u32(
             &mut packet[Self::ACK_NUM_OFFSET..Self::ACK_NUM_OFFSET + Self::ACK_NUM_BUF],
-            ack_number,
+            ack_number.raw(),
         );
 
         // Inserts the length of the event string into the packet
@@ -213,7 +213,7 @@ where
         packet[bytes_offset..].copy_from_slice(buf);
 
         // Store complete packet in ack waiting list
-        if ack_number > 0 {
+        if ack_number.raw() > 0 {
             self.ack_manager.insert_packet_into_ack_waiting_list(
                 ack_number,
                 packet.to_vec(),

@@ -1,6 +1,31 @@
-use std::{net::ToSocketAddrs, time::Instant};
+use std::{net::ToSocketAddrs, ops::{Add, AddAssign}, time::Instant};
 
-pub(crate) type AckNumber = u32;
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+pub(crate) struct AckNumber(u32);
+
+impl AckNumber {
+    pub fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    pub fn raw(&self) -> u32 {
+        self.0
+    }
+}
+
+impl Add for AckNumber {
+    type Output = AckNumber;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl AddAssign for AckNumber {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = Self(self.0 + rhs.0)
+    }
+}
 
 /// A packet awaiting acknowledgement
 pub(crate) struct AckPacket {

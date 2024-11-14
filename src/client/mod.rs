@@ -8,7 +8,7 @@ use std::{
 use byteorder::{ByteOrder, LittleEndian};
 
 use crate::{
-    acknowledgement::manager::AcknowledgementManager,
+    acknowledgement::{manager::AcknowledgementManager, packet::AckNumber},
     connection::EstablishedConnection,
     events::EventEmitter,
     packet::{IntoPacketDelivery, PacketDelivery},
@@ -135,7 +135,7 @@ impl<'socket> NautSocket<'socket, NautClient> {
 
             // We have received acknowledgement of a packet we have sent
             if delivery_type == PacketDelivery::ack_delivery() {
-                let ack_num = LittleEndian::read_u32(&packet[2..6]);
+                let ack_num = AckNumber::new(LittleEndian::read_u32(&packet[2..6]));
                 self.ack_manager.packets_waiting_on_ack.remove(&ack_num);
 
                 continue;
