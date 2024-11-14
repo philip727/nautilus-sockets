@@ -15,9 +15,12 @@ use crate::{
     client::ConnectionId,
     connection::EstablishedConnection,
     events::EventEmitter,
-    packet::{PacketDelivery, PACKET_ACK_DELIVERY},
+    packet::{IntoPacketDelivery, PacketDelivery},
     sequence::SequenceNumber,
-    socket::{NautSocket, SocketType},
+    socket::{
+        events::{SocketEvent, SocketRunEventResult},
+        NautSocket, SocketType,
+    },
 };
 
 // Incremental Id
@@ -184,7 +187,8 @@ impl<'socket> NautSocket<'socket, NautServer> {
     /// Gets the packets from the packet queue and will handle returning
     /// [ack packets](crate::acknowledgement::packet::AckPacket), resolving sequenced packets, emitting
     /// listening events, establishing new connections and disconnecting idling clients
-    pub fn run_events(&mut self) {
+    pub fn run_events(&mut self) -> SocketRunEventResult<Vec<SocketEvent>> {
+        let mut failures = Vec::new();
         // Clears server events when we reach the limit
         if self.inner.server_events.len() > self.inner.max_server_events as usize {
             self.inner.server_events.clear();
@@ -203,10 +207,20 @@ impl<'socket> NautSocket<'socket, NautServer> {
             }
         }
 
-        while let Some((addr, packet)) = self.get_oldest_packet() {
+        while let Some((addr, packet)) = self.oldest_packet_in_queue() {
             let delivery_type = Self::get_delivery_type_from_packet(&packet);
+            let Ok(delivery_type) =
+                <PacketDelivery as IntoPacketDelivery<u16>>::into_packet_delivery(delivery_type)
+            else {
+                failures.push(SocketEvent::ReadPacketFail(String::from(
+                    "Failed to read packet due to invalid delivery type",
+                )));
+                continue;
+            };
 
-            if delivery_type == PACKET_ACK_DELIVERY {
+            // We must check if the packet is of ack delivery first because ack packets do not have
+            // the same byte size as a normal packet
+            if delivery_type == PacketDelivery::ack_delivery() {
                 let ack_num = LittleEndian::read_u32(&packet[2..6]);
                 self.ack_manager.packets_waiting_on_ack.remove(&ack_num);
 
@@ -218,21 +232,18 @@ impl<'socket> NautSocket<'socket, NautServer> {
                 continue;
             }
 
-            let delivery_type = Into::<PacketDelivery>::into(delivery_type);
             // Send a packet  to acknowledge the sender we have recieved their packet
-            if delivery_type == PacketDelivery::Reliable
-                || delivery_type == PacketDelivery::ReliableSequenced
-            {
-                self.send_ack_packet(addr, &packet);
+            if delivery_type.is_reliable() {
+                if let Err(e) = self.send_ack_packet(addr, &packet) {
+                    failures.push(SocketEvent::SendPacketFail(e.to_string()))
+                }
             }
 
             let Ok(event) = Self::get_event_from_packet(&packet) else {
                 continue;
             };
 
-            if delivery_type == PacketDelivery::ReliableSequenced
-                || delivery_type == PacketDelivery::UnreliableSequenced
-            {
+            if delivery_type.is_sequenced() {
                 let seq_num = Self::get_seq_from_packet(&packet);
                 if let Some(last_recv_seq_num) =
                     self.inner.last_recv_seq_num_for_event(&addr, &event)
@@ -274,13 +285,21 @@ impl<'socket> NautSocket<'socket, NautServer> {
 
         // Retry ack packets
         self.retry_ack_packets();
+
+        if !failures.is_empty() {
+            return SocketRunEventResult::HadFailures(failures);
+        }
+
+        SocketRunEventResult::Ok
     }
 
     /// Sends an event message to all [established connections](EstablishedConnection)
-    pub fn broadcast<D>(&mut self, event: &str, buf: &[u8], delivery: D) -> anyhow::Result<()>
-    where
-        D: Into<PacketDelivery> + std::cmp::PartialEq<u16> + Copy,
-    {
+    pub fn broadcast(
+        &mut self,
+        event: &str,
+        buf: &[u8],
+        delivery: PacketDelivery,
+    ) -> anyhow::Result<()> {
         let connection_ids: Vec<ConnectionId> =
             { self.inner.connection_id_to_addr.keys().cloned().collect() };
 
@@ -292,16 +311,13 @@ impl<'socket> NautSocket<'socket, NautServer> {
     }
 
     /// Sends an event message to the [server](crate::server::NautServer) we are connected to
-    pub fn send<D>(
+    pub fn send(
         &mut self,
         event: &str,
         buf: &[u8],
-        delivery: D,
+        delivery: PacketDelivery,
         client: ConnectionId,
-    ) -> anyhow::Result<()>
-    where
-        D: Into<PacketDelivery> + std::cmp::PartialEq<u16> + Copy,
-    {
+    ) -> anyhow::Result<()> {
         let addr = {
             *self
                 .inner

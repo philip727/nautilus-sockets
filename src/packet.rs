@@ -1,5 +1,11 @@
+use anyhow::{anyhow, Ok};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SocketDelivery;
+
 /// Describes how a packet will reach its target
 #[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(u16)]
 pub enum PacketDelivery {
     /// A packet which has no guarantee of reaching its target, and if it doesn't it will be
     /// forgotten
@@ -13,26 +19,59 @@ pub enum PacketDelivery {
     /// A packet which will require an acknowledgement. If the package receives no ack it will be
     /// resent to the target, however the packet may be discared if not the latest packet
     ReliableSequenced = 3,
+
+    #[allow(private_interfaces)]
+    /// The packet delivery type for an acknowledgement packet
+    AckDelivery(SocketDelivery) = 10,
 }
 
-impl From<u16> for PacketDelivery {
-    fn from(value: u16) -> Self {
+impl PacketDelivery {
+    pub fn ack_delivery() -> Self {
+        Self::AckDelivery(SocketDelivery)
+    }
+
+    pub fn is_reliable(&self) -> bool {
+        *self == Self::Reliable || *self == Self::ReliableSequenced
+    }
+
+    pub fn is_unreliable(&self) -> bool {
+        *self == Self::UnreliableSequenced || *self == Self::Unreliable
+    }
+
+    pub fn is_sequenced(&self) -> bool {
+        *self == Self::ReliableSequenced || *self == Self::UnreliableSequenced
+    }
+}
+
+impl IntoPacketDelivery<u16> for PacketDelivery {
+    fn into_packet_delivery(value: u16) -> anyhow::Result<Self> {
         match value {
-            0 => PacketDelivery::Unreliable,
-            1 => PacketDelivery::UnreliableSequenced,
-            2 => PacketDelivery::Reliable,
-            3 => PacketDelivery::ReliableSequenced,
-            // Just default to unreliable on unknown types of delivery
-            _ => PacketDelivery::Unreliable,
+            0 => Ok(PacketDelivery::Unreliable),
+            1 => Ok(PacketDelivery::UnreliableSequenced),
+            2 => Ok(PacketDelivery::Reliable),
+            3 => Ok(PacketDelivery::ReliableSequenced),
+            10 => Ok(PacketDelivery::ack_delivery()),
+            _ => Err(anyhow!(
+                "Cannot turn value {value} into type of PacketDelivery"
+            )),
+        }
+    }
+
+    fn packet_delivery_into(&self) -> anyhow::Result<u16> {
+        match self {
+            PacketDelivery::Unreliable => Ok(0),
+            PacketDelivery::UnreliableSequenced => Ok(1),
+            PacketDelivery::Reliable => Ok(2),
+            PacketDelivery::ReliableSequenced => Ok(3),
+            PacketDelivery::AckDelivery(SocketDelivery) => Ok(10),
         }
     }
 }
 
-impl PartialEq<u16> for PacketDelivery {
-    fn eq(&self, other: &u16) -> bool {
-        *self as u16 == *other
-    }
-}
+pub trait IntoPacketDelivery<T> {
+    fn into_packet_delivery(value: T) -> anyhow::Result<Self>
+    where
+        Self: Sized;
 
-/// The packet delivery type for an acknowledgement packet
-pub(crate) const PACKET_ACK_DELIVERY: u16 = 10;
+    fn packet_delivery_into(&self) -> anyhow::Result<T>;
+}

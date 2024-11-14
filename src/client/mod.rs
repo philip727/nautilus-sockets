@@ -11,9 +11,12 @@ use crate::{
     acknowledgement::manager::AcknowledgementManager,
     connection::EstablishedConnection,
     events::EventEmitter,
-    packet::{PacketDelivery, PACKET_ACK_DELIVERY},
+    packet::{IntoPacketDelivery, PacketDelivery},
     sequence::SequenceNumber,
-    socket::{NautSocket, SocketType},
+    socket::{
+        events::{SocketEvent, SocketRunEventResult},
+        NautSocket, SocketType,
+    },
 };
 
 pub type ConnectionId = u16;
@@ -104,10 +107,12 @@ impl<'socket> NautSocket<'socket, NautClient> {
     }
 
     /// Sends an event message to the [server](crate::server::NautServer) we are connected to
-    pub fn send<D>(&mut self, event: &str, buf: &[u8], delivery: D) -> anyhow::Result<()>
-    where
-        D: Into<PacketDelivery> + std::cmp::PartialEq<u16> + Copy,
-    {
+    pub fn send(
+        &mut self,
+        event: &str,
+        buf: &[u8],
+        delivery: PacketDelivery,
+    ) -> anyhow::Result<()> {
         let server_addr = { self.inner.server_connection.as_ref().unwrap().addr };
 
         self.send_by_addr(event, buf, delivery, server_addr.to_string())?;
@@ -118,12 +123,18 @@ impl<'socket> NautSocket<'socket, NautClient> {
     /// Gets the packets from the packet queue and will handle returning
     /// [ack packets](crate::acknowledgement::packet::AckPacket), resolving sequenced packets and emitting
     /// listening events
-    pub fn run_events(&mut self) {
-        while let Some((addr, packet)) = self.get_oldest_packet() {
+    pub fn run_events(&mut self) -> SocketRunEventResult<Vec<SocketEvent>> {
+        let mut failures = Vec::new();
+        while let Some((addr, packet)) = self.oldest_packet_in_queue() {
             let delivery_type = Self::get_delivery_type_from_packet(&packet);
+            let Ok(delivery_type) =
+                <PacketDelivery as IntoPacketDelivery<u16>>::into_packet_delivery(delivery_type)
+            else {
+                continue;
+            };
 
             // We have received acknowledgement of a packet we have sent
-            if delivery_type == PACKET_ACK_DELIVERY {
+            if delivery_type == PacketDelivery::ack_delivery() {
                 let ack_num = LittleEndian::read_u32(&packet[2..6]);
                 self.ack_manager.packets_waiting_on_ack.remove(&ack_num);
 
@@ -140,18 +151,15 @@ impl<'socket> NautSocket<'socket, NautClient> {
                 continue;
             };
 
-            let delivery_type = Into::<PacketDelivery>::into(delivery_type);
             // Send a packet  to acknowledge the sender we have recieved their packet
-            if delivery_type == PacketDelivery::Reliable
-                || delivery_type == PacketDelivery::ReliableSequenced
-            {
-                self.send_ack_packet(addr, &packet);
+            if delivery_type.is_reliable() {
+                if let Err(e) = self.send_ack_packet(addr, &packet) {
+                    failures.push(SocketEvent::SendPacketFail(e.to_string()))
+                }
             }
 
             // If its a sequenced packet we must make sure its the latest packet in sequence
-            if delivery_type == PacketDelivery::ReliableSequenced
-                || delivery_type == PacketDelivery::UnreliableSequenced
-            {
+            if delivery_type.is_sequenced()            {
                 let seq_num = Self::get_seq_from_packet(&packet);
                 if let Some(last_recv_seq_num) =
                     self.inner.last_recv_seq_num_for_event(&addr, &event)
@@ -177,5 +185,11 @@ impl<'socket> NautSocket<'socket, NautClient> {
 
         // Retry ack packets
         self.retry_ack_packets();
+
+        if !failures.is_empty() {
+            return SocketRunEventResult::HadFailures(failures);
+        }
+
+        SocketRunEventResult::Ok
     }
 }
