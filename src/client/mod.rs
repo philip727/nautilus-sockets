@@ -37,11 +37,11 @@ impl<'socket> SocketType<'socket> for NautClient {
         let Some(seq) = server_connection.current_send_seq_num.get_mut(event) else {
             server_connection
                 .current_send_seq_num
-                .insert(event.to_owned(), 0);
-            return Some(0);
+                .insert(event.to_owned(), SequenceNumber::new(0));
+            return Some(SequenceNumber::new(0));
         };
 
-        *seq += 1;
+        *seq += SequenceNumber::new(1);
 
         Some(*seq)
     }
@@ -56,7 +56,7 @@ impl<'socket> SocketType<'socket> for NautClient {
         if !server_connection.last_seq_num_recv.contains_key(event) {
             server_connection
                 .last_seq_num_recv
-                .insert(event.to_string(), 0);
+                .insert(event.to_string(), SequenceNumber::new(0));
         }
 
         let seq = server_connection.last_seq_num_recv.get_mut(event)?;
@@ -167,7 +167,7 @@ impl<'socket> NautSocket<'socket, NautClient> {
                     // Discard packet
                     if seq_num < *last_recv_seq_num {
                         println!(
-                            "Discarding {event} packet, last recv: {} recv: {}",
+                            "Discarding {event} packet, last recv: {:?} recv: {:?}",
                             *last_recv_seq_num, seq_num
                         );
                         continue;

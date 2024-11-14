@@ -111,8 +111,10 @@ where
     }
 
     /// Gets the sequence number from the packet
-    pub(crate) fn get_seq_from_packet(buf: &[u8]) -> u32 {
-        LittleEndian::read_u32(&buf[Self::SEQ_NUM_OFFSET..Self::SEQ_NUM_OFFSET + Self::SEQ_NUM_BUF])
+    pub(crate) fn get_seq_from_packet(buf: &[u8]) -> SequenceNumber {
+        SequenceNumber::new(LittleEndian::read_u32(
+            &buf[Self::SEQ_NUM_OFFSET..Self::SEQ_NUM_OFFSET + Self::SEQ_NUM_BUF],
+        ))
     }
 
     /// Get the event title from the packet
@@ -177,7 +179,7 @@ where
             if let Some(seq_num) = seq_num {
                 LittleEndian::write_u32(
                     &mut packet[Self::SEQ_NUM_OFFSET..Self::SEQ_NUM_OFFSET + Self::SEQ_NUM_BUF],
-                    seq_num,
+                    seq_num.raw(),
                 );
             }
         }
