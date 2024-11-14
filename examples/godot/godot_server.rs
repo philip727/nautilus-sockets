@@ -1,7 +1,5 @@
 use std::{
-    sync::{mpsc, Arc},
-    thread::sleep,
-    time::Duration,
+    cell::RefCell, collections::HashMap, rc::Rc, sync::{mpsc, Arc}, thread::sleep, time::Duration
 };
 
 use nautilus_sockets::prelude::*;
@@ -15,6 +13,8 @@ fn main() {
     let sender_clone = Arc::clone(&sender);
     socket.on("join", move |server, (addr, _packet)| {
         let client = server.get_client_id(&addr);
+
+
 
         let _ = sender_clone.send(*client.unwrap());
     });

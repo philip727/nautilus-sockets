@@ -26,18 +26,22 @@ pub enum PacketDelivery {
 }
 
 impl PacketDelivery {
-    pub fn ack_delivery() -> Self {
+    /// Creates a packet delivery type for ack since it's a private interface
+    pub(crate) fn ack_delivery() -> Self {
         Self::AckDelivery(SocketDelivery)
     }
 
+    /// Is a reliable delivery type
     pub fn is_reliable(&self) -> bool {
         *self == Self::Reliable || *self == Self::ReliableSequenced
     }
 
+    /// Is an unreliable delivery type
     pub fn is_unreliable(&self) -> bool {
         *self == Self::UnreliableSequenced || *self == Self::Unreliable
     }
 
+    /// Is a sequenced delivery type
     pub fn is_sequenced(&self) -> bool {
         *self == Self::ReliableSequenced || *self == Self::UnreliableSequenced
     }
@@ -57,7 +61,7 @@ impl IntoPacketDelivery<u16> for PacketDelivery {
         }
     }
 
-    fn packet_delivery_into(&self) -> anyhow::Result<u16> {
+    fn packet_delivery_as(&self) -> anyhow::Result<u16> {
         match self {
             PacketDelivery::Unreliable => Ok(0),
             PacketDelivery::UnreliableSequenced => Ok(1),
@@ -73,5 +77,5 @@ pub trait IntoPacketDelivery<T> {
     where
         Self: Sized;
 
-    fn packet_delivery_into(&self) -> anyhow::Result<T>;
+    fn packet_delivery_as(&self) -> anyhow::Result<T>;
 }

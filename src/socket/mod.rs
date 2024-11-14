@@ -159,7 +159,7 @@ where
         let pad = (4 - (event.len() % 4)) % 4;
         let padded_event_len = event.len() + pad;
         let total_len = Self::PACKET_PADDING + padded_event_len + buf.len();
-        let delivery_type = delivery.packet_delivery_into()?;
+        let delivery_type = delivery.packet_delivery_as()?;
 
         let mut packet = vec![0; total_len];
         // Inserts the packet delivery type into the packet
@@ -254,7 +254,7 @@ where
         LittleEndian::write_u16(
             &mut buf
                 [Self::DELIVERY_TYPE_OFFSET..Self::DELIVERY_TYPE_OFFSET + Self::DELIVERY_TYPE_BUF],
-            PacketDelivery::ack_delivery().packet_delivery_into()?,
+            PacketDelivery::ack_delivery().packet_delivery_as()?,
         );
 
         // Get the ack num from the original packet

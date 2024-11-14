@@ -28,6 +28,7 @@ impl AcknowledgementManager {
         }
     }
 
+    /// Gets a new acknowledgement number and resets if we hit the limit
     pub(crate) fn get_new_ack_num(&mut self) -> AckNumber {
         self.last_ack += AckNumber::new(1);
 
@@ -38,6 +39,7 @@ impl AcknowledgementManager {
         self.last_ack
     }
 
+    /// Inserts a packet into the waiting list, incase it needs to be reset
     pub(crate) fn insert_packet_into_ack_waiting_list<A>(
         &mut self,
         ack_num: AckNumber,
