@@ -49,6 +49,7 @@ impl<'socket, T> EventEmitter<'socket, T> where T: SocketType<'socket> {
         }
     }
 
+    /// Registers a callback that is run everytime the socket is polled
     pub(crate) fn register_poll_event<F>(&mut self, f: F)
     where
         F: Fn(&NautSocket<T>) + Send + Sync + 'static,
@@ -56,6 +57,7 @@ impl<'socket, T> EventEmitter<'socket, T> where T: SocketType<'socket> {
         self.polled_callbacks.push(Arc::new(f));
     }
 
+    /// Runs all polled events
     pub(crate) fn emit_polled_events(&self, socket: &NautSocket<'socket, T>)
     where
         T: SocketType<'socket>,

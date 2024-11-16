@@ -5,7 +5,7 @@ pub enum SocketRunEventResult<V> {
 }
 
 /// The different type of events that can occur during a socket running its events
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum SocketEvent {
     ReadPacketFail(String),
     SendPacketFail(String),
