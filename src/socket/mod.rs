@@ -245,7 +245,7 @@ where
     /// ```
     pub fn on<F>(&mut self, event: &str, cb: F)
     where
-        F: Fn(&S, EventCallbackArgs) + Send + Sync + 'static,
+        F: Fn(&mut NautSocket<S>, EventCallbackArgs) + Send + Sync + 'static,
     {
         self.event_emitter.register_event(event, cb);
     }
@@ -263,7 +263,7 @@ where
     /// ```
     pub fn on_poll<F>(&mut self, cb: F)
     where
-        F: Fn(&NautSocket<S>) + Send + Sync + 'static,
+        F: Fn(&mut NautSocket<S>) + Send + Sync + 'static,
     {
         self.event_emitter.register_poll_event(cb);
     }
