@@ -6,6 +6,7 @@ mod packet;
 mod sequence;
 mod server;
 mod socket;
+mod plugins;
 
 /// Gives you access to everything you need to create an event listening socket
 pub mod prelude {

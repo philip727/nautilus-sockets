@@ -23,11 +23,21 @@ pub enum PacketDelivery {
     #[allow(private_interfaces)]
     /// The packet delivery type for an acknowledgement packet
     AckDelivery(SocketDelivery) = 10,
+
+    /// In place packet delivery type to request the details of the server without establishing a
+    /// connection
+    #[allow(private_interfaces)]
+    DetailRequest(SocketDelivery) = 11,
 }
 
 impl PacketDelivery {
     /// Creates a packet delivery type for ack since it's a private interface
     pub(crate) fn ack_delivery() -> Self {
+        Self::AckDelivery(SocketDelivery)
+    }
+
+    /// Creates a packet delivery type for detail request since it's a private interface
+    pub(crate) fn detail_request() -> Self {
         Self::AckDelivery(SocketDelivery)
     }
 
@@ -55,6 +65,7 @@ impl IntoPacketDelivery<u16> for PacketDelivery {
             2 => Ok(PacketDelivery::Reliable),
             3 => Ok(PacketDelivery::ReliableSequenced),
             10 => Ok(PacketDelivery::ack_delivery()),
+            11 => Ok(PacketDelivery::detail_request()),
             _ => Err(anyhow!(
                 "Cannot turn value {value} into type of PacketDelivery"
             )),
@@ -68,6 +79,7 @@ impl IntoPacketDelivery<u16> for PacketDelivery {
             PacketDelivery::Reliable => Ok(2),
             PacketDelivery::ReliableSequenced => Ok(3),
             PacketDelivery::AckDelivery(SocketDelivery) => Ok(10),
+            PacketDelivery::DetailRequest(SocketDelivery) => Ok(11),
         }
     }
 }
