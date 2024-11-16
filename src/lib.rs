@@ -16,4 +16,5 @@ pub mod prelude {
     pub use crate::packet::*;
     pub use crate::server::config::*;
     pub use crate::plugins::*;
+    pub use crate::plugins::logging::*;
 }
