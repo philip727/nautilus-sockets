@@ -122,6 +122,8 @@ impl<'socket> NautSocket<'socket, NautClient> {
     /// [ack packets](crate::acknowledgement::packet::AckPacket), resolving sequenced packets and emitting
     /// listening events
     pub fn run_events(&mut self) {
+        let event_emitter = std::mem::take(&mut self.event_emitter);
+        let event_emitter_ref = &event_emitter;
         while let Some((addr, packet)) = self.oldest_packet_in_queue() {
             let delivery_type = Self::get_delivery_type_from_packet(&packet);
             let Ok(delivery_type) =
@@ -176,15 +178,17 @@ impl<'socket> NautSocket<'socket, NautClient> {
             }
 
             let bytes = Self::get_packet_bytes(&packet);
+
             // Emits the event to the event listeners
-            self.event_emitter
-                .emit_event(&event, &self.inner, (addr, &bytes));
+            event_emitter_ref.emit_event(&event, self, (addr, &bytes));
         }
 
-        self.event_emitter.emit_polled_events(self);
-        self.socket_events.clear();
+        event_emitter_ref.emit_polled_events(self);
 
         // Retry ack packets
+        self.socket_events.clear();
         self.retry_ack_packets();
+
+        self.event_emitter = event_emitter;
     }
 }

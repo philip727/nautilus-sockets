@@ -198,6 +198,8 @@ impl<'socket> NautSocket<'socket, NautServer> {
             }
         }
 
+        let event_emitter = std::mem::take(&mut self.event_emitter);
+        let event_emitter_ref = &event_emitter;
         while let Some((addr, packet)) = self.oldest_packet_in_queue() {
             let delivery_type = Self::get_delivery_type_from_packet(&packet);
             let Ok(delivery_type) =
@@ -272,18 +274,21 @@ impl<'socket> NautSocket<'socket, NautServer> {
             self.inner.time_outs.insert(client, Instant::now());
 
             let bytes = Self::get_packet_bytes(&packet);
-            self.event_emitter
-                .emit_event(&event, &self.inner, (addr, &bytes));
+            event_emitter_ref
+                .emit_event(&event, self, (addr, &bytes));
         }
 
         // Emit all polled events
-        self.event_emitter.emit_polled_events(self);
+        event_emitter.emit_polled_events(self);
+
         // Clear server events this time around
         self.inner.server_events.clear();
         self.socket_events.clear();
 
         // Retry ack packets
         self.retry_ack_packets();
+
+        self.event_emitter = event_emitter;
     }
 
     /// Sends an event message to all [established connections](EstablishedConnection)
