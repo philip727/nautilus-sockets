@@ -292,7 +292,7 @@ where
         Ok(())
     }
 
-    /// Registers a plugin that creates certain functionality on the server
+    /// Registers a [plugin](crate::plugins::SocketPlugin)
     pub fn register_plugin(mut self, plugin: impl SocketPlugin<'socket, S>) -> Self {
         plugin.register(&mut self);
 
