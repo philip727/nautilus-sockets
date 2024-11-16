@@ -1,12 +1,12 @@
 mod acknowledgement;
-mod client;
+pub mod client;
 mod connection;
 mod events;
-mod packet;
+pub mod packet;
 mod sequence;
-mod server;
-mod socket;
-mod plugins;
+pub mod server;
+pub mod socket;
+pub mod plugins;
 
 /// Gives you access to everything you need to create an event listening socket
 pub mod prelude {
