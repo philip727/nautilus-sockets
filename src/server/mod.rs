@@ -17,10 +17,7 @@ use crate::{
     events::EventEmitter,
     packet::{IntoPacketDelivery, PacketDelivery},
     sequence::SequenceNumber,
-    socket::{
-        events::{SocketEvent, SocketRunEventResult},
-        NautSocket, SocketType,
-    },
+    socket::{events::SocketEvent, NautSocket, SocketType},
 };
 
 // Incremental Id
@@ -38,16 +35,13 @@ pub struct NautServer {
 
     idle_connection_timeout: Duration,
 
-    /// Queue of server events, unless polled this will stack up
     server_events: VecDeque<ServerEvent>,
-    max_server_events: u8,
 }
 
 impl NautServer {
     pub fn new(config: ServerConfig) -> Self {
         Self {
             max_connections: config.max_connections,
-            max_server_events: config.max_server_events,
             idle_connection_timeout: config.idle_connection_time,
             ..Default::default()
         }
@@ -64,13 +58,18 @@ impl NautServer {
     }
 
     /// Gets an iterator to all [server events](ServerEvent) in the queue, this will not remove any from queue
-    pub fn get_all_server_events(&self) -> std::collections::vec_deque::Iter<'_, ServerEvent> {
+    pub fn iter_server_events(&self) -> std::collections::vec_deque::Iter<'_, ServerEvent> {
         self.server_events.iter()
     }
 
-    /// Gets a [server event](ServerEvent) from the front of the queue
-    pub fn get_server_event(&mut self) -> Option<ServerEvent> {
-        self.server_events.pop_front()
+    /// Gets the max amount of connections the server can handle
+    pub fn get_max_connections(&self) -> u8 {
+        self.max_connections
+    }
+
+    /// Gets the current amount of established connections
+    pub fn get_current_connections(&self) -> u8 {
+        self.connections.len() as u8
     }
 
     /// Checks if a client has not sent a packet for the (idle time)[Self::idle_connection_timeout]
@@ -147,7 +146,6 @@ impl Default for NautServer {
             freed_ids: VecDeque::new(),
             idle_connection_timeout: Duration::from_secs(20),
             server_events: VecDeque::new(),
-            max_server_events: 64,
         }
     }
 }
@@ -171,6 +169,7 @@ impl<'socket> NautSocket<'socket, NautServer> {
             event_emitter,
             ack_manager: AcknowledgementManager::new(),
             phantom: PhantomData,
+            socket_events: Vec::new(),
         })
     }
 
@@ -187,13 +186,7 @@ impl<'socket> NautSocket<'socket, NautServer> {
     /// Gets the packets from the packet queue and will handle returning
     /// [ack packets](crate::acknowledgement::packet::AckPacket), resolving sequenced packets, emitting
     /// listening events, establishing new connections and disconnecting idling clients
-    pub fn run_events(&mut self) -> SocketRunEventResult<Vec<SocketEvent>> {
-        let mut failures = Vec::new();
-        // Clears server events when we reach the limit
-        if self.inner.server_events.len() > self.inner.max_server_events as usize {
-            self.inner.server_events.clear();
-        }
-
+    pub fn run_events(&mut self) {
         // Disconnect idle clients
         if let Some(ids_to_free) = self.inner.any_client_needs_freeing() {
             for id in ids_to_free.iter() {
@@ -202,8 +195,6 @@ impl<'socket> NautSocket<'socket, NautServer> {
                 self.inner
                     .server_events
                     .push_back(ServerEvent::OnClientTimeout(*id));
-
-                println!("Timed out client with id: {id}");
             }
         }
 
@@ -212,9 +203,10 @@ impl<'socket> NautSocket<'socket, NautServer> {
             let Ok(delivery_type) =
                 <PacketDelivery as IntoPacketDelivery<u16>>::into_packet_delivery(delivery_type)
             else {
-                failures.push(SocketEvent::ReadPacketFail(String::from(
-                    "Failed to read packet due to invalid delivery type",
-                )));
+                self.socket_events
+                    .push(SocketEvent::ReadPacketFail(String::from(
+                        "Failed to read packet due to invalid delivery type",
+                    )));
                 continue;
             };
 
@@ -235,7 +227,8 @@ impl<'socket> NautSocket<'socket, NautServer> {
             // Send a packet  to acknowledge the sender we have recieved their packet
             if delivery_type.is_reliable() {
                 if let Err(e) = self.send_ack_packet(addr, &packet) {
-                    failures.push(SocketEvent::SendPacketFail(e.to_string()))
+                    self.socket_events
+                        .push(SocketEvent::SendPacketFail(e.to_string()))
                 }
             }
 
@@ -283,14 +276,14 @@ impl<'socket> NautSocket<'socket, NautServer> {
                 .emit_event(&event, &self.inner, (addr, &bytes));
         }
 
+        // Emit all polled events
+        self.event_emitter.emit_polled_events(self);
+        // Clear server events this time around
+        self.inner.server_events.clear();
+        self.socket_events.clear();
+
         // Retry ack packets
         self.retry_ack_packets();
-
-        if !failures.is_empty() {
-            return SocketRunEventResult::HadFailures(failures);
-        }
-
-        SocketRunEventResult::Ok
     }
 
     /// Sends an event message to all [established connections](EstablishedConnection)
@@ -376,7 +369,7 @@ impl<'socket> SocketType<'socket> for NautServer {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum ServerEvent {
     /// Pushed to the server event queue when a client connects
     OnClientConnected(ConnectionId),
