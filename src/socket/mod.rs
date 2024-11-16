@@ -9,11 +9,16 @@ use std::{
 };
 
 use byteorder::{ByteOrder, LittleEndian};
+use events::SocketEvent;
 
 use crate::{
-    acknowledgement::{manager::AcknowledgementManager, packet::{AckNumber, AckPacket}},
-    events::{CallbackArgs, EventEmitter},
+    acknowledgement::{
+        manager::AcknowledgementManager,
+        packet::{AckNumber, AckPacket},
+    },
+    events::{EventCallbackArgs, EventEmitter},
     packet::{IntoPacketDelivery, PacketDelivery},
+    plugins::SocketPlugin,
     sequence::SequenceNumber,
 };
 
@@ -26,9 +31,11 @@ where
     pub(crate) packet_queue: VecDeque<ReceivedPacket>,
     pub(crate) inner: S,
 
-    pub(crate) event_emitter: EventEmitter<S>,
+    pub(crate) event_emitter: EventEmitter<'socket, S>,
     pub(crate) ack_manager: AcknowledgementManager,
     pub(crate) phantom: PhantomData<&'socket S>,
+
+    pub(crate) socket_events: Vec<SocketEvent>,
 }
 
 impl<'socket, S> NautSocket<'socket, S>
@@ -238,9 +245,27 @@ where
     /// ```
     pub fn on<F>(&mut self, event: &str, cb: F)
     where
-        F: Fn(&S, CallbackArgs) + Send + Sync + 'static,
+        F: Fn(&S, EventCallbackArgs) + Send + Sync + 'static,
     {
         self.event_emitter.register_event(event, cb);
+    }
+
+    /// Run a function as a callback everytime the socket is polled
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// // When the server is polled it will print "Do some stuff"]
+    /// // Can be used to read server events, etc.
+    /// server.on_poll(|_server| {
+    ///     println!("Do some stufff");
+    /// });
+    /// ```
+    pub fn on_poll<F>(&mut self, cb: F)
+    where
+        F: Fn(&NautSocket<S>) + Send + Sync + 'static,
+    {
+        self.event_emitter.register_poll_event(cb);
     }
 
     /// Sends an [acknowledgement packet](AckPacket) to the [address](SocketAddr)
@@ -265,6 +290,13 @@ where
         self.socket.send_to(&buf, addr)?;
 
         Ok(())
+    }
+
+    /// Registers a plugin that creates certain functionality on the server
+    pub fn register_plugin(mut self, plugin: impl SocketPlugin<'socket, S>) -> Self {
+        plugin.register(&mut self);
+
+        self
     }
 }
 
