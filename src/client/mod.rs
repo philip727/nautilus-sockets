@@ -13,10 +13,7 @@ use crate::{
     events::EventEmitter,
     packet::{IntoPacketDelivery, PacketDelivery},
     sequence::SequenceNumber,
-    socket::{
-        events::{SocketEvent, SocketRunEventResult},
-        NautSocket, SocketType,
-    },
+    socket::{events::SocketEvent, NautSocket, SocketType},
 };
 
 pub type ConnectionId = u16;
@@ -82,6 +79,7 @@ impl<'socket> NautSocket<'socket, NautClient> {
             event_emitter: EventEmitter::new(),
             ack_manager: AcknowledgementManager::new(),
             phantom: PhantomData,
+            socket_events: Vec::new(),
         };
 
         Ok(naut_socket)
@@ -123,8 +121,7 @@ impl<'socket> NautSocket<'socket, NautClient> {
     /// Gets the packets from the packet queue and will handle returning
     /// [ack packets](crate::acknowledgement::packet::AckPacket), resolving sequenced packets and emitting
     /// listening events
-    pub fn run_events(&mut self) -> SocketRunEventResult<Vec<SocketEvent>> {
-        let mut failures = Vec::new();
+    pub fn run_events(&mut self) {
         while let Some((addr, packet)) = self.oldest_packet_in_queue() {
             let delivery_type = Self::get_delivery_type_from_packet(&packet);
             let Ok(delivery_type) =
@@ -154,12 +151,13 @@ impl<'socket> NautSocket<'socket, NautClient> {
             // Send a packet  to acknowledge the sender we have recieved their packet
             if delivery_type.is_reliable() {
                 if let Err(e) = self.send_ack_packet(addr, &packet) {
-                    failures.push(SocketEvent::SendPacketFail(e.to_string()))
+                    self.socket_events
+                        .push(SocketEvent::SendPacketFail(e.to_string()))
                 }
             }
 
             // If its a sequenced packet we must make sure its the latest packet in sequence
-            if delivery_type.is_sequenced()            {
+            if delivery_type.is_sequenced() {
                 let seq_num = Self::get_seq_from_packet(&packet);
                 if let Some(last_recv_seq_num) =
                     self.inner.last_recv_seq_num_for_event(&addr, &event)
@@ -183,13 +181,10 @@ impl<'socket> NautSocket<'socket, NautClient> {
                 .emit_event(&event, &self.inner, (addr, &bytes));
         }
 
+        self.event_emitter.emit_polled_events(self);
+        self.socket_events.clear();
+
         // Retry ack packets
         self.retry_ack_packets();
-
-        if !failures.is_empty() {
-            return SocketRunEventResult::HadFailures(failures);
-        }
-
-        SocketRunEventResult::Ok
     }
 }
