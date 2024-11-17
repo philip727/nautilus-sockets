@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, net::SocketAddr};
 
 use nautilus_sockets::prelude::*;
 
@@ -27,76 +27,85 @@ pub struct ChattersPlugin;
 impl SocketPlugin<'_, NautServer> for ChattersPlugin {
     fn register(&self, socket: &mut NautSocket<'_, NautServer>) {
         socket.init_persistent::<Chatters>();
-        socket.on("new_messenger", move |socket, (addr, packet)| {
-            let Some(id) = socket.server().get_client_id(&addr) else {
-                return;
-            };
 
-            let Some(chatters) = socket.get_persistent::<Chatters>() else {
-                return;
-            };
+        socket.on("new_messenger", create_new_messenger);
+        socket.on("send_message", on_send_message);
 
-            let name = String::from_utf8(packet.to_vec()).unwrap();
-            {
+        socket.on_poll(remove_chatters_on_disconnect);
+    }
+}
+
+fn remove_chatters_on_disconnect(socket: &mut NautSocket<'_, NautServer>) {
+    for event in socket.server().iter_server_events() {
+        match event {
+            ServerEvent::OnClientTimeout(id) | ServerEvent::OnClientDisconnected(id) => {
+                let Some(chatters) = socket.get_persistent::<Chatters>() else {
+                    return;
+                };
+
                 let Ok(mut chatters) = chatters.write() else {
                     return;
                 };
 
-                chatters.names.insert(*id, name.clone());
+                chatters.names.remove(id);
             }
-
-            let join_msg = format!("Welcome {name}");
-
-            let _ = socket.broadcast(
-                "recv_message",
-                join_msg.as_bytes(),
-                PacketDelivery::Reliable,
-            );
-        });
-
-        socket.on_poll(move |socket| {
-            for event in socket.server().iter_server_events() {
-                match event {
-                    ServerEvent::OnClientTimeout(id) | ServerEvent::OnClientDisconnected(id) => {
-                        let Some(chatters) = socket.get_persistent::<Chatters>() else {
-                            return;
-                        };
-
-                        let Ok(mut chatters) = chatters.write() else {
-                            return;
-                        };
-
-                        chatters.names.remove(id);
-                    }
-                    _ => {}
-                }
-            }
-        });
-
-        socket.on("send_message", move |socket, (addr, packet)| {
-            let Some(id) = socket.server().get_client_id(&addr) else {
-                return;
-            };
-
-            let name = {
-                let Some(chatters) = socket.get_persistent::<Chatters>() else {
-                    return;
-                };
-                let Ok(chatters) = chatters.read() else {
-                    return;
-                };
-
-                chatters.names.get(id).cloned()
-            };
-
-            let Some(name) = name else {
-                return;
-            };
-
-            let msg = String::from_utf8(packet.to_vec()).unwrap();
-            let string = format!("{}: {}", name, msg);
-            println!("{string}");
-            let _ = socket.broadcast("recv_message", string.as_bytes(), PacketDelivery::Reliable);
-        });
+            _ => {}
+        }
     }
+}
+
+fn on_send_message(socket: &mut NautSocket<'_, NautServer>, (addr, packet): (SocketAddr, &[u8])) {
+    let Some(id) = socket.server().get_client_id(&addr) else {
+        return;
+    };
+
+    let name = {
+        let Some(chatters) = socket.get_persistent::<Chatters>() else {
+            return;
+        };
+        let Ok(chatters) = chatters.read() else {
+            return;
+        };
+
+        chatters.names.get(id).cloned()
+    };
+
+    let Some(name) = name else {
+        return;
+    };
+
+    let msg = String::from_utf8(packet.to_vec()).unwrap();
+    let string = format!("{}: {}", name, msg);
+    println!("{string}");
+    let _ = socket.broadcast("recv_message", string.as_bytes(), PacketDelivery::Reliable);
+}
+
+fn create_new_messenger(
+    socket: &mut NautSocket<'_, NautServer>,
+    (addr, packet): (SocketAddr, &[u8]),
+) {
+    let Some(id) = socket.server().get_client_id(&addr) else {
+        return;
+    };
+
+    let Some(chatters) = socket.get_persistent::<Chatters>() else {
+        return;
+    };
+
+    let name = String::from_utf8(packet.to_vec()).unwrap();
+    {
+        let Ok(mut chatters) = chatters.write() else {
+            return;
+        };
+
+        chatters.names.insert(*id, name.clone());
+    }
+
+    let join_msg = format!("Welcome {name}");
+
+    let _ = socket.broadcast(
+        "recv_message",
+        join_msg.as_bytes(),
+        PacketDelivery::Reliable,
+    );
 }
