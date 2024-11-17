@@ -5,6 +5,7 @@ use std::{
     marker::PhantomData,
     net::{SocketAddr, ToSocketAddrs, UdpSocket},
     str::FromStr,
+    sync::{Arc, RwLock},
     time::Instant,
 };
 
@@ -18,11 +19,13 @@ use crate::{
     },
     events::{EventCallbackArgs, EventEmitter},
     packet::{IntoPacketDelivery, PacketDelivery},
+    persistent::{storage::PersistentStorage, Persistent},
     plugins::SocketPlugin,
     sequence::SequenceNumber,
 };
 
 pub type ReceivedPacket = (SocketAddr, Vec<u8>);
+
 pub struct NautSocket<'socket, S>
 where
     S: SocketType<'socket>,
@@ -36,6 +39,8 @@ where
     pub(crate) phantom: PhantomData<&'socket S>,
 
     pub(crate) socket_events: Vec<SocketEvent>,
+
+    pub(crate) persistent: PersistentStorage,
 }
 
 impl<'socket, S> NautSocket<'socket, S>
@@ -293,10 +298,29 @@ where
     }
 
     /// Registers a [plugin](crate::plugins::SocketPlugin)
-    pub fn register_plugin(mut self, plugin: impl SocketPlugin<'socket, S>) -> Self {
-        plugin.register(&mut self);
+    pub fn register_plugin(&mut self, plugin: impl SocketPlugin<'socket, S>) {
+        plugin.register(self);
+    }
 
-        self
+    pub fn get_persistent<P>(&self) -> Option<Arc<RwLock<P>>>
+    where
+        P: Persistent,
+    {
+        self.persistent.get_persistent()
+    }
+
+    pub fn insert_persistent<P>(&mut self, persistent: P)
+    where
+        P: Persistent,
+    {
+        self.persistent.insert_persistent(persistent);
+    }
+
+    pub fn init_persistent<P>(&mut self)
+    where
+        P: Persistent + Default,
+    {
+        self.persistent.init_persistent::<P>();
     }
 }
 
