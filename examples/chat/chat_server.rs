@@ -28,7 +28,7 @@ impl SocketPlugin<'_, NautServer> for ChattersPlugin {
     fn register(&self, socket: &mut NautSocket<'_, NautServer>) {
         socket.init_persistent::<Chatters>();
 
-        socket.on("new_messenger", create_new_messenger);
+        socket.on("new_messenger", create_new_chatter);
         socket.on("send_message", on_send_message);
 
         socket.on_poll(remove_chatters_on_disconnect);
@@ -76,11 +76,10 @@ fn on_send_message(socket: &mut NautSocket<'_, NautServer>, (addr, packet): (Soc
 
     let msg = String::from_utf8(packet.to_vec()).unwrap();
     let string = format!("{}: {}", name, msg);
-    println!("{string}");
     let _ = socket.broadcast("recv_message", string.as_bytes(), PacketDelivery::Reliable);
 }
 
-fn create_new_messenger(
+fn create_new_chatter(
     socket: &mut NautSocket<'_, NautServer>,
     (addr, packet): (SocketAddr, &[u8]),
 ) {
