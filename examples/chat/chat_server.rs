@@ -5,10 +5,10 @@ use nautilus_sockets::prelude::*;
 fn main() {
     let mut socket =
         NautSocket::<NautServer>::new("127.0.0.1:8008", ServerConfig::default()).unwrap();
+
     socket.register_plugin(LoggingPlugin);
     socket.register_plugin(ChattersPlugin);
 
-    socket.on("hi", move |_, _| {});
 
     loop {
         // Must be run for every socket
