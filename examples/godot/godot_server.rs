@@ -3,9 +3,9 @@ use std::{thread::sleep, time::Duration};
 use nautilus_sockets::prelude::*;
 
 fn main() {
-    let mut socket = NautSocket::<NautServer>::new("127.0.0.1:8008", ServerConfig::default())
-        .unwrap()
-        .register_plugin(LoggingPlugin);
+    let mut socket =
+        NautSocket::<NautServer>::new("127.0.0.1:8008", ServerConfig::default()).unwrap();
+    socket.register_plugin(LoggingPlugin);
 
     socket.on("join", move |socket, (addr, _packet)| {
         let client = socket.server().get_client_id(&addr);

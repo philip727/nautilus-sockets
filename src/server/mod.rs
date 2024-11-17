@@ -16,6 +16,7 @@ use crate::{
     connection::EstablishedConnection,
     events::EventEmitter,
     packet::{IntoPacketDelivery, PacketDelivery},
+    persistent::storage::PersistentStorage,
     sequence::SequenceNumber,
     socket::{events::SocketEvent, NautSocket, SocketType},
 };
@@ -170,6 +171,7 @@ impl<'socket> NautSocket<'socket, NautServer> {
             ack_manager: AcknowledgementManager::new(),
             phantom: PhantomData,
             socket_events: Vec::new(),
+            persistent: PersistentStorage::new(),
         })
     }
 
@@ -274,8 +276,7 @@ impl<'socket> NautSocket<'socket, NautServer> {
             self.inner.time_outs.insert(client, Instant::now());
 
             let bytes = Self::get_packet_bytes(&packet);
-            event_emitter_ref
-                .emit_event(&event, self, (addr, &bytes));
+            event_emitter_ref.emit_event(&event, self, (addr, &bytes));
         }
 
         // Emit all polled events
