@@ -298,10 +298,7 @@ where
     }
 
     /// Registers a [plugin](crate::plugins::SocketPlugin)
-    pub fn register_plugin<P>(&'socket mut self, plugin: P)
-    where
-        P: SocketPlugin<'socket, S>,
-    {
+    pub fn register_plugin<'plugin>(&'plugin mut self, plugin: impl SocketPlugin<'socket, S>) {
         plugin.register(self);
     }
 

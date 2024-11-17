@@ -8,6 +8,8 @@ fn main() {
     socket.register_plugin(LoggingPlugin);
     socket.register_plugin(ChattersPlugin);
 
+    socket.on("hi", move |_, _| {});
+
     loop {
         // Must be run for every socket
         socket.poll();
