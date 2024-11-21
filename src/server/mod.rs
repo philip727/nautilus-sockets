@@ -203,7 +203,12 @@ impl<'socket> NautSocket<'socket, NautServer> {
         let event_emitter = std::mem::take(&mut self.event_emitter);
         let event_emitter_ref = &event_emitter;
         while let Some((addr, packet)) = self.oldest_packet_in_queue() {
-            let delivery_type = Self::get_delivery_type_from_packet(&packet);
+            let Some(delivery_type) = Self::get_delivery_type_from_packet(&packet) else {
+                self.socket_events
+                    .push(SocketEvent::ReadPacketFail("No delivery type".to_string()));
+                continue;
+            };
+
             let Ok(delivery_type) =
                 <PacketDelivery as IntoPacketDelivery<u16>>::into_packet_delivery(delivery_type)
             else {
@@ -241,7 +246,13 @@ impl<'socket> NautSocket<'socket, NautServer> {
             };
 
             if delivery_type.is_sequenced() {
-                let seq_num = Self::get_seq_from_packet(&packet);
+                let Some(seq_num) = Self::get_seq_from_packet(&packet) else {
+                    self.socket_events.push(SocketEvent::ReadPacketFail(
+                        "No sequence number in sequenced packet".to_string(),
+                    ));
+                    continue;
+                };
+
                 if let Some(last_recv_seq_num) =
                     self.inner.last_recv_seq_num_for_event(&addr, &event)
                 {
@@ -275,7 +286,7 @@ impl<'socket> NautSocket<'socket, NautServer> {
             let client = *client;
             self.inner.time_outs.insert(client, Instant::now());
 
-            let bytes = Self::get_packet_bytes(&packet);
+            let bytes = Self::get_packet_bytes(&packet).unwrap_or(Default::default());
             event_emitter_ref.emit_event(&event, self, (addr, &bytes));
         }
 

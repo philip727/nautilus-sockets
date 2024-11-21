@@ -9,6 +9,7 @@ use std::{
     time::Instant,
 };
 
+use anyhow::anyhow;
 use byteorder::{ByteOrder, LittleEndian};
 use events::SocketEvent;
 
@@ -111,22 +112,40 @@ where
     }
 
     /// Gets the delivery type of the packet
-    pub(crate) fn get_delivery_type_from_packet(buf: &[u8]) -> u16 {
-        LittleEndian::read_u16(
+    pub(crate) fn get_delivery_type_from_packet(buf: &[u8]) -> Option<u16> {
+        if Self::DELIVERY_TYPE_OFFSET == buf.len()
+            || Self::DELIVERY_TYPE_OFFSET + Self::DELIVERY_TYPE_BUF > buf.len()
+        {
+            return None;
+        }
+
+        Some(LittleEndian::read_u16(
             &buf[Self::DELIVERY_TYPE_OFFSET..Self::DELIVERY_TYPE_OFFSET + Self::DELIVERY_TYPE_BUF],
-        )
+        ))
     }
 
     /// Gets the acknowledgement number from the packet
-    pub(crate) fn get_ack_num_from_packet(buf: &[u8]) -> u32 {
-        LittleEndian::read_u32(&buf[Self::ACK_NUM_OFFSET..Self::ACK_NUM_OFFSET + Self::ACK_NUM_BUF])
+    pub(crate) fn get_ack_num_from_packet(buf: &[u8]) -> Option<u32> {
+        if Self::ACK_NUM_OFFSET > buf.len() || Self::ACK_NUM_OFFSET + Self::ACK_NUM_BUF > buf.len()
+        {
+            return None;
+        }
+
+        Some(LittleEndian::read_u32(
+            &buf[Self::ACK_NUM_OFFSET..Self::ACK_NUM_OFFSET + Self::ACK_NUM_BUF],
+        ))
     }
 
     /// Gets the sequence number from the packet
-    pub(crate) fn get_seq_from_packet(buf: &[u8]) -> SequenceNumber {
-        SequenceNumber::new(LittleEndian::read_u32(
+    pub(crate) fn get_seq_from_packet(buf: &[u8]) -> Option<SequenceNumber> {
+        if Self::SEQ_NUM_OFFSET > buf.len() || Self::SEQ_NUM_OFFSET + Self::SEQ_NUM_BUF > buf.len()
+        {
+            return None;
+        }
+
+        Some(SequenceNumber::new(LittleEndian::read_u32(
             &buf[Self::SEQ_NUM_OFFSET..Self::SEQ_NUM_OFFSET + Self::SEQ_NUM_BUF],
-        ))
+        )))
     }
 
     /// Get the event title from the packet
@@ -137,13 +156,17 @@ where
 
         let event_offset = Self::EVENT_LEN_OFFSET + Self::EVENT_LEN_BUF;
 
+        if event_offset > buf.len() || event_offset + length > buf.len() {
+            return Err(anyhow!("Packet not large enough for event"));
+        }
+
         Ok(String::from_utf8(
             buf[event_offset..event_offset + length].to_vec(),
         )?)
     }
 
     /// Gets the remaining packet bytes
-    pub(crate) fn get_packet_bytes(buf: &[u8]) -> Vec<u8> {
+    pub(crate) fn get_packet_bytes(buf: &[u8]) -> Option<Vec<u8>> {
         let length = LittleEndian::read_u32(
             &buf[Self::EVENT_LEN_OFFSET..Self::EVENT_LEN_OFFSET + Self::EVENT_LEN_BUF],
         ) as usize;
@@ -152,7 +175,11 @@ where
         let event_offset = Self::EVENT_LEN_OFFSET + Self::EVENT_LEN_BUF;
         let bytes_offset = event_offset + length + pad;
 
-        buf[bytes_offset..].to_vec()
+        if bytes_offset > buf.len() {
+            return None;
+        }
+
+        Some(buf[bytes_offset..].to_vec())
     }
 
     /// Sends a packet to a [socket address](SocketAddr) and inserts the [packet delivery type](PacketDelivery), [AckNumber] and [SequenceNumber] and the
@@ -288,7 +315,10 @@ where
         );
 
         // Get the ack num from the original packet
-        let ack_num = Self::get_ack_num_from_packet(packet);
+        let Some(ack_num) = Self::get_ack_num_from_packet(packet) else {
+            return Err(anyhow!("No ack num in packet"));
+        };
+
         // Write ack num into ack delivery packet
         LittleEndian::write_u32(&mut buf[2..6], ack_num);
 

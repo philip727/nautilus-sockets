@@ -127,7 +127,12 @@ impl<'socket> NautSocket<'socket, NautClient> {
         let event_emitter = std::mem::take(&mut self.event_emitter);
         let event_emitter_ref = &event_emitter;
         while let Some((addr, packet)) = self.oldest_packet_in_queue() {
-            let delivery_type = Self::get_delivery_type_from_packet(&packet);
+            let Some(delivery_type) = Self::get_delivery_type_from_packet(&packet) else {
+                self.socket_events
+                    .push(SocketEvent::ReadPacketFail("No delivery type".to_string()));
+                continue;
+            };
+
             let Ok(delivery_type) =
                 <PacketDelivery as IntoPacketDelivery<u16>>::into_packet_delivery(delivery_type)
             else {
@@ -162,16 +167,22 @@ impl<'socket> NautSocket<'socket, NautClient> {
 
             // If its a sequenced packet we must make sure its the latest packet in sequence
             if delivery_type.is_sequenced() {
-                let seq_num = Self::get_seq_from_packet(&packet);
+                let Some(seq_num) = Self::get_seq_from_packet(&packet) else {
+                    self.socket_events.push(SocketEvent::ReadPacketFail(
+                        "No sequence number in sequenced packet".to_string(),
+                    ));
+                    continue;
+                };
+
                 if let Some(last_recv_seq_num) =
                     self.inner.last_recv_seq_num_for_event(&addr, &event)
                 {
                     // Discard packet
                     if seq_num < *last_recv_seq_num {
-                        println!(
+                        self.socket_events.push(SocketEvent::PacketDiscard(format!(
                             "Discarding {event} packet, last recv: {:?} recv: {:?}",
                             *last_recv_seq_num, seq_num
-                        );
+                        )));
                         continue;
                     }
 
@@ -179,8 +190,7 @@ impl<'socket> NautSocket<'socket, NautClient> {
                 };
             }
 
-            let bytes = Self::get_packet_bytes(&packet);
-
+            let bytes = Self::get_packet_bytes(&packet).unwrap_or(Default::default());
             // Emits the event to the event listeners
             event_emitter_ref.emit_event(&event, self, (addr, &bytes));
         }
