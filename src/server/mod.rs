@@ -304,20 +304,32 @@ impl<'socket> NautSocket<'socket, NautServer> {
     }
 
     /// Sends an event message to all [established connections](EstablishedConnection)
-    pub fn broadcast(
-        &mut self,
-        event: &str,
-        buf: &[u8],
-        delivery: PacketDelivery,
-    ) -> anyhow::Result<()> {
+    pub fn broadcast(&mut self, event: &str, buf: &[u8], delivery: PacketDelivery) {
         let connection_ids: Vec<ConnectionId> =
             { self.inner.connection_id_to_addr.keys().cloned().collect() };
 
         for id in connection_ids {
             let _ = self.send(event, buf, delivery, id);
         }
+    }
 
-        Ok(())
+    pub fn broadcast_except(
+        &mut self,
+        event: &str,
+        buf: &[u8],
+        delivery: PacketDelivery,
+        excluded: Vec<ConnectionId>,
+    ) {
+        let connection_ids: Vec<ConnectionId> =
+            { self.inner.connection_id_to_addr.keys().cloned().collect() };
+
+        for id in connection_ids {
+            if excluded.contains(&id) {
+                continue;
+            }
+
+            let _ = self.send(event, buf, delivery, id);
+        }
     }
 
     /// Sends an event message to the [server](crate::server::NautServer) we are connected to
