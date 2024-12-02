@@ -48,8 +48,8 @@ impl NautServer {
         }
     }
 
-    /// Get an iterator over all of the clients
-    pub fn iter_clients(&self) -> Vec<ConnectionId> {
+    /// Clones a vector of all connection ids
+    pub fn clients(&self) -> Vec<ConnectionId> {
         self.connections.keys().cloned().collect::<Vec<ConnectionId>>()
     }
 
