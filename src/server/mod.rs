@@ -48,6 +48,11 @@ impl NautServer {
         }
     }
 
+    /// Get an iterator over all of the clients
+    pub fn iter_clients(&self) -> Vec<ConnectionId> {
+        self.connections.keys().cloned().collect::<Vec<ConnectionId>>()
+    }
+
     /// Gets the [client's id](ConnectionId) from an [address](SocketAddr)
     pub fn get_client_addr(&self, id: &ConnectionId) -> Option<&SocketAddr> {
         self.connection_id_to_addr.get(id)
